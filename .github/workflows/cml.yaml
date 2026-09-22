@@ -1,14 +1,51 @@
-name: model-seasonality
-on: [push]
+name: Model Training & SHAP Analysis
+
+on: [push, pull_request]
+
 jobs:
-  run:
-    runs-on: self-hosted
+  train-and-evaluate:
+    runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
+
+    env:
+      CUDA_VISIBLE_DEVICES: "0"
+
     steps:
-      - uses: actions/checkout@v7
-      
-      - uses: prefix-dev/setup-pixi@v0.9.4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify GPU access
+        run: |
+          echo "Checking GPU availability..."
+          nvidia-smi
+          echo "CUDA version:"
+          nvcc --version
+
+      - name: Set up pixi
+        uses: prefix-dev/setup-pixi@v0.9.4
         with:
-          pixi-version: v0.65.0
+          pixi-version: v0.66.0
           cache: true
-      
-      - run: pixi run negis-seasonality
+
+      - name: Train model
+        run: pixi run -e seasonality-model python train_model.py
+
+      - name: Run SHAP analysis
+        run: pixi run -e seasonality-model python shap_analysis.py
+
+      - name: Generate figures
+        run: pixi run -e seasonality-model python generate_figures.py
+
+      - name: Report results to PR
+        run: pixi run -e seasonality-model cml comment create --file figures/results.md
+
+      # - name: Save artifacts
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: model-results
+      #     path: |
+      #       figures/
+      #       models/
+      #       *.pkl
+      #       *.h5
+      #     retention-days: 30
