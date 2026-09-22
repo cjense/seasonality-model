@@ -1,0 +1,23 @@
+[workspace]
+authors = ["Claire <clairej735@gmail.com>"]
+channels = ["rapidsai", "nvidia", "conda-forge"]
+name = "seasonality-model"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+numpy = ">=2.5.3,<3"
+xgboost = ">=3.4.2,<4"
+dask = ">=2026.8.0,<2027"
+pandas = ">=3.0.6,<4"
+xarray = ">=2026.7.0,<2027"
+shap = ">=0.52.0,<0.53"
+matplotlib = ">=3.11.2,<4"
+jupyter = ">=1.1.1,<2"
+s3fs = ">=2026.7.0,<2027"
+boto3 = ">=1.43.75,<2"
+
+[pypi-dependencies]
+geoshapley = ">=0.2.0.0, <0.3"
