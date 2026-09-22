@@ -12,7 +12,6 @@ module load gcc/11.x 2>/dev/null || true
 # Submit job to Slurm with GPU allocation
 srun --gpus=1 \
      --cpus-per-task=4 \
-     --mem=200G \
+     --mem=100G \
      --time=12:00:00 \
-     --partition=gpu \
      bash -c "cd $RUNNER_DIR && ./run.sh"

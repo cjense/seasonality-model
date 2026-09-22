@@ -10,7 +10,6 @@ sbatch <<'SLURM'
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=100G
 #SBATCH --time=12:00:00
-#SBATCH --partition=gpu
 #SBATCH --output=/slurm/slurm-%j.log
 
 module load cuda/12.x
