@@ -35,18 +35,7 @@ tar xzf actions-runner-linux-x64.tar.gz
   --unattended
 ```
 
-### 2. Set up the Slurm wrapper script
-
-```bash
-# Make scripts executable
-chmod +x scripts/slurm-runner.sh
-chmod +x scripts/submit-runner.sh
-
-# Copy scripts to runner directory (or create symlinks)
-cp scripts/slurm-runner.sh ~/actions-runner/
-```
-
-### 3. Create a quick-start script (no sudo needed)
+### 2. Create a quick-start script (no sudo needed)
 
 Since you don't have sudo and only want to run on-demand, create this simple script:
 
@@ -80,41 +69,7 @@ EOF
 chmod +x ~/actions-runner/start-runner.sh
 ```
 
-### 3b. (Alternative) Set up as a systemd service (requires sudo, skip if you don't have it)
-
-```bash
-# Create systemd service file
-cat > /tmp/actions-runner.service <<'EOF'
-[Unit]
-Description=GitHub Actions Runner (Slurm-based)
-After=network.target
-
-[Service]
-Type=simple
-User=YOUR_USERNAME
-WorkingDirectory=YOUR_RUNNER_PATH
-ExecStart=YOUR_RUNNER_PATH/slurm-runner.sh
-Restart=always
-RestartSec=10
-Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-Environment="HOME=/home/YOUR_USERNAME"
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Replace placeholders
-sed -i "s|YOUR_USERNAME|$(whoami)|g" /tmp/actions-runner.service
-sed -i "s|YOUR_RUNNER_PATH|$HOME/actions-runner|g" /tmp/actions-runner.service
-
-# Install service
-sudo mv /tmp/actions-runner.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable actions-runner
-sudo systemctl start actions-runner
-```
-
-### 4. Test the setup
+### 3. Test the setup
 
 ```bash
 # Test the start-runner script
@@ -227,16 +182,16 @@ EOF
 
 ### Adjust Slurm resources
 
-Edit `scripts/slurm-runner.sh` to change:
+Edit `~/actions-runner/start-runner.sh` to change:
 - `--gpus=1` - Number of GPUs (default: 1)
 - `--cpus-per-task=4` - CPU cores (default: 4)
-- `--mem=16G` - Memory allocation (default: 16GB)
+- `--mem=100G` - Memory allocation (default: 100GB)
 - `--time=12:00:00` - Maximum job duration (default: 12 hours)
-- `--partition=gpu` - Slurm partition name
+- `--partition=gpu` - Slurm partition name (usually `gpu` on Tillicum)
 
 ### Load different CUDA versions
 
-Update the module load in `scripts/slurm-runner.sh`:
+Update the module load in `~/actions-runner/start-runner.sh`:
 ```bash
 module load cuda/11.x  # or your preferred version
 ```
@@ -260,16 +215,17 @@ Since you pay for Tillicum usage, here are ways to keep costs down:
 
 ### Example: Run for only 2 hours
 
-Edit `start-runner.sh` and change:
+Edit `~/actions-runner/start-runner.sh` and change:
 ```bash
 --time=2:00:00  # Instead of 12:00:00
 ```
 
-### Example: Use only 1 CPU
+### Example: Use only 1 CPU and 8GB memory
 
-Edit `start-runner.sh` and change:
+Edit `~/actions-runner/start-runner.sh` and change:
 ```bash
 --cpus-per-task=1  # Instead of 4
+--mem=8G           # Instead of 100G
 ```
 
 ## Quick Reference: Daily Workflow
