@@ -5,6 +5,9 @@ name = "seasonality-model"
 platforms = ["linux-64"]
 version = "0.1.0"
 
+[environments]
+seasonality-model = ["default"]
+
 [tasks]
 
 [dependencies]
