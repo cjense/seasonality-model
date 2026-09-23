@@ -20,11 +20,11 @@ jobs:
       # echo "CUDA version:"
       # nvcc --version
 
-      - name: Set up pixi
-        uses: prefix-dev/setup-pixi@v0.9.4
-        with:
-          pixi-version: v0.66.0
-          cache: true
+      # - name: Set up pixi
+      #   uses: prefix-dev/setup-pixi@v0.9.4
+      #   with:
+      #     pixi-version: v0.66.0
+      #     cache: true
 
       - name: Train model
         run: pixi run -e seasonality-model python testsmallmodel.py
