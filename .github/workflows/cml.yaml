@@ -17,8 +17,8 @@ jobs:
         run: |
           echo "Checking GPU availability..."
           nvidia-smi
-          echo "CUDA version:"
-          nvcc --version
+      # echo "CUDA version:"
+      # nvcc --version
 
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@v0.9.4
@@ -27,16 +27,25 @@ jobs:
           cache: true
 
       - name: Train model
-        run: pixi run -e seasonality-model python train_model.py
+        run: pixi run -e seasonality-model python testsmallmodel.py
 
-      - name: Run SHAP analysis
-        run: pixi run -e seasonality-model python shap_analysis.py
+      - name: Report results
+        run: |
+          echo "## Model metrics" > report.md
+          cat metrics.txt >> report.md
+          cml publish figures/modelresult.png --md >> report.md
+          cml comment create report.md
 
-      - name: Generate figures
-        run: pixi run -e seasonality-model python generate_figures.py
 
-      - name: Report results to PR
-        run: pixi run -e seasonality-model cml comment create --file figures/results.md
+
+      # - name: Run SHAP analysis
+      #   run: pixi run -e seasonality-model python shap_analysis.py
+
+      # - name: Generate figures
+      #   run: pixi run -e seasonality-model python generate_figures.py
+
+      # - name: Report results to PR
+      #   run: pixi run -e seasonality-model cml comment create --file figures/results.md
 
       # - name: Save artifacts
       #   if: always()
