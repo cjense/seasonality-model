@@ -235,10 +235,13 @@ def main():
     # fs.put(model_path, f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}.json")
     # print(f"\nModel saved to S3.")
     
-    explainer = shap.TreeExplainer(model, train)
-    shap_vals = explainer(test)
+    feature_cols = model.get_booster().feature_names
+
+    masker = shap.maskers.Independent(train[feature_cols], max_samples=len(train))
+    explainer = shap.TreeExplainer(model, masker)
+    shap_vals = explainer(test[feature_cols])
     
-    shap.plots.beeswarm(shap_vals[FEATURE_COLS], show=False)
+    shap.plots.beeswarm(shap_vals[feature_cols], show=False)
     plt.savefig('figures/beeswarm.png', dpi=300)
     
     return model, metrics
