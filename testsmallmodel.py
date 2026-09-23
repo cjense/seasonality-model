@@ -43,14 +43,14 @@ FEATURE_COLS = [
     # "ice_elevation",
     "meltwater", "ice_velocity",
     # Non-spatial vars (broadcast)
-    "t_u", "masked_mel_velocity", "non_nan_area", "ocean_EN4_TFc",
+    "airtemp", "masked_mel_velocity", "melange_area_km", "ocean_EN4_TFc",
     # Lag features
     "vel_lag_1step", "vel_lag_30d", "vel_lag_60d", "vel_lag_90d",
     "vel_roll_30d_mean", "vel_roll_30d_std",
     # Time
     "season_sin", "season_cos", "year_norm", "time_days",
     # Space
-    "x_norm", "y_norm",
+    "x", "y",
 ]
 TARGET_COL = "discharge"
 
