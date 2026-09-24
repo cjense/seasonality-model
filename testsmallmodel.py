@@ -14,7 +14,7 @@ from geoshapley import GeoShapleyTreeExplainer
 # ─────────────────────────────────────────────
 GLACIER_NAME  = "zach"           # change to glacier_B for second run
 S3_BUCKET     = "s3://gaia"
-RESOLUTION    = "30D"                  # "6D" or "1D" — start with 6D
+RESOLUTION    = "1D"                  # "6D" or "1D" — start with 6D
 TRAIN_CUTOFF  = "2022-01-01"          # everything before this is train
 TEST_START    = "2022-01-01"          # everything from here is test
 # CACHE_PARQUET = True                  # write flat df to S3 after extraction
@@ -192,34 +192,35 @@ def main():
         # Space
         "x", "y",
     ]
-    df = pd.read_parquet('s3://gaia/cjense/data/testmodel/monthlymean_testdata.parquet', storage_options=storage_options)
+    # df = pd.read_parquet('s3://gaia/cjense/data/testmodel/monthlymean_testdata.parquet', storage_options=storage_options)
 
-    # ns = pd.read_parquet(
-    #     f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
-    #     storage_options=storage_options
-    # )
-    # df = df.reset_index()
-    # ns = ns.reset_index()
-    # ns["time"] = pd.to_datetime(ns["time"]).dt.normalize()
-    # df["time"] = pd.to_datetime(df["time"])
+    ns = pd.read_parquet(
+        f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
+        storage_options=storage_options
+    )
+    df = df.reset_index()
+    ns = ns.reset_index()
+    ns["time"] = pd.to_datetime(ns["time"]).dt.normalize()
+    df["time"] = pd.to_datetime(df["time"])
 
-    # df = df.merge(ns, on="time", how="outer")
+    df = df.merge(ns, on="time", how="outer")
 
-    # print("Merged spatial and non-spatial dataframes.")
-    # # print(df.head())
+    print("Merged spatial and non-spatial dataframes.")
+    # print(df.head())
 
-    # df = df.resample("ME", on='time').mean().reset_index()
-    # resolution_days = int(RESOLUTION.replace("D", ""))
-    # df = engineer_features(df, resolution_days=resolution_days)
-    # df = optimize_dtypes(df)
-    # print("Datatypes optimized")
+    df = df.resample("ME", on='time').mean().reset_index()
+    resolution_days = int(RESOLUTION.replace("D", ""))
+    df = engineer_features(df, resolution_days=resolution_days)
+    df = optimize_dtypes(df)
+    print("Datatypes optimized")
 
-    # cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet"
-    # print(f"Writing flat parquet to {cache_path} ...")
-    # df.to_parquet(cache_path, storage_options=storage_options, index=False)
-    # print("Cached.")
+    cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet"
+    print(f"Writing flat parquet to {cache_path} ...")
+    df.to_parquet(cache_path, storage_options=storage_options, index=False)
+    print("Cached.")
     
-    # df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_2{RESOLUTION}.parquet", storage_options=storage_options)
+    df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_2{RESOLUTION}.parquet", storage_options=storage_options)
+    
     df = df.dropna(subset=['discharge'])
     
     df = df.dropna(subset=['x'])
@@ -259,7 +260,6 @@ def main():
 
     ax = shap.plots.heatmap(shap_vals_combined[:, non_seasonal_vars], instance_order=instance_order, show=False)
     ax.set_aspect("auto")
-    ax.figure.set_size_inches(15, 5)
 
     # label the x-axis with the year instead of a raw instance index
     year_change = times_combined.dt.year.ne(times_combined.dt.year.shift(1))
