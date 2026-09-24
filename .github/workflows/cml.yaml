@@ -6,10 +6,6 @@ jobs:
   train-and-evaluate:
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
 
-    permissions:
-      contents: write        # commit comments (push events)
-      pull-requests: write   # PR comments (pull_request events)
-
     env:
       CUDA_VISIBLE_DEVICES: "0"
 
