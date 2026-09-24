@@ -211,8 +211,8 @@ def main():
     df = df.resample("ME", on='time').mean().reset_index()
     resolution_days = int(RESOLUTION.replace("D", ""))
     df = engineer_features(df, resolution_days=resolution_days)
-    df = optimize_dtypes(df)
-    print("Datatypes optimized")
+    # df = optimize_dtypes(df)
+    # print("Datatypes optimized")
 
     cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet"
     print(f"Writing flat parquet to {cache_path} ...")
