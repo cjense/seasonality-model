@@ -250,6 +250,7 @@ def main():
     # Beeswarm plot
     shap.plots.beeswarm(shap_vals[:, non_seasonal_vars], show=False, max_display=len(FEATURE_COLS))
     plt.savefig('./figures/beeswarm.png', dpi=300, bbox_inches='tight')
+    plt.clf()
 
     # Heatmap plot
     combined = pd.concat([train, test], ignore_index=True).sort_values("time").reset_index(drop=True)
@@ -260,6 +261,7 @@ def main():
 
     ax = shap.plots.heatmap(shap_vals_combined[:, non_seasonal_vars], instance_order=instance_order, show=False)
     ax.set_aspect("auto")
+    ax.figure.set_size_inches(15, 5)
 
     # label the x-axis with the year instead of a raw instance index
     year_change = times_combined.dt.year.ne(times_combined.dt.year.shift(1))
