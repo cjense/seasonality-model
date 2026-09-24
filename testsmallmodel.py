@@ -45,8 +45,8 @@ FEATURE_COLS = [
     # Non-spatial vars (broadcast)
     "airtemp", "masked_mel_velocity", "melange_area_km", "ocean_EN4_TFc",
     # Lag features
-    "vel_lag_1step", "vel_lag_30d", "vel_lag_60d", "vel_lag_90d",
-    "vel_roll_30d_mean", "vel_roll_30d_std",
+    "lag_1step", "lag_30d", "lag_60d", "lag_90d",
+    "roll_30d_mean", "roll_30d_std",
     # Time
     "season_sin", "season_cos", "year_norm", "time_days",
     # Space
@@ -70,10 +70,10 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 6) -> pd.DataFram
     steps_60d  = max(1, round(60  / resolution_days))
     steps_90d  = max(1, round(90  / resolution_days))
 
-    df["vel_lag_1step"] = px["discharge"].shift(1)          # 1 timestep ago
-    df["vel_lag_30d"]   = px["discharge"].shift(steps_30d)
-    df["vel_lag_60d"]   = px["discharge"].shift(steps_60d)
-    df["vel_lag_90d"]   = px["discharge"].shift(steps_90d)
+    df["lag_1step"] = px["discharge"].shift(1)          # 1 timestep ago
+    df["lag_30d"]   = px["discharge"].shift(steps_30d)
+    df["lag_60d"]   = px["discharge"].shift(steps_60d)
+    df["lag_90d"]   = px["discharge"].shift(steps_90d)
 
     # Rolling mean over past ~30 days (excludes current timestep via shift first)
     df["vel_roll_30d_mean"] = (
@@ -97,11 +97,6 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 6) -> pd.DataFram
 
     # Integer time (days since 2000-01-01) — useful as raw feature too
     df["time_days"] = (t - pd.Timestamp("2000-01-01")).dt.days.astype("int16")
-
-    # ── Spatial position features ──
-    # Normalize x/y so model can learn position-dependent patterns
-    df["x_norm"] = ((df["x"] - df["x"].min()) / (df["x"].max() - df["x"].min())).astype("float32")
-    df["y_norm"] = ((df["y"] - df["y"].min()) / (df["y"].max() - df["y"].min())).astype("float32")
 
     return df
 
@@ -187,6 +182,16 @@ def evaluate(model: xgb.Booster, test_df: pd.DataFrame):
 
 
 def main():
+    
+    non_seasonal_vars = [
+        # Spatial vars
+        # "ice_elevation",
+        "meltwater", "ice_velocity",
+        # Non-spatial vars (broadcast)
+        "airtemp", "masked_mel_velocity", "melange_area_km", "ocean_EN4_TFc",
+        # Space
+        "x", "y",
+    ]
     df = pd.read_parquet('s3://gaia/cjense/data/testmodel/monthlymean_testdata.parquet', storage_options=storage_options)
 
     # ns = pd.read_parquet(
@@ -241,7 +246,7 @@ def main():
     explainer = shap.TreeExplainer(model, masker)
     shap_vals = explainer(test[FEATURE_COLS])
     
-    shap.plots.beeswarm(shap_vals[FEATURE_COLS], show=False)
+    shap.plots.beeswarm(shap_vals[non_seasonal_vars], show=False)
     plt.savefig('figures/beeswarm.png', dpi=300)
     
     return model, metrics
