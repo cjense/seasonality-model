@@ -247,7 +247,7 @@ def main():
     shap_vals = explainer(test[FEATURE_COLS])
 
     # Beeswarm plot
-    shap.plots.beeswarm(shap_vals[:, non_seasonal_vars], show=True, max_display=len(FEATURE_COLS))
+    shap.plots.beeswarm(shap_vals[:, non_seasonal_vars], show=False, max_display=len(FEATURE_COLS))
     plt.savefig('/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/beeswarm.png', dpi=300, bbox_inches='tight')
 
     # Heatmap plot

@@ -29,8 +29,12 @@ jobs:
       - name: Train model
         run: pixi run -e seasonality-model python testsmallmodel.py
 
+      - name: Set up CML
+        uses: iterative/setup-cml@v2
+
       - name: Report results
-      - uses: iterative/setup-cml@latest
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "## Model metrics" > report.md
           cat metrics.txt >> report.md
