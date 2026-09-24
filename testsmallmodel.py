@@ -193,7 +193,7 @@ def main():
         "x", "y",
     ]
     # df = pd.read_parquet('s3://gaia/cjense/data/testmodel/monthlymean_testdata.parquet', storage_options=storage_options)
-
+    df = pd.read_parquet('s3://gaia/cjense/data/testmodel/flat_6D.parquet', storage_options=storage_options)
     ns = pd.read_parquet(
         f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
         storage_options=storage_options
