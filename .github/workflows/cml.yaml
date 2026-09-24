@@ -30,7 +30,7 @@ jobs:
         run: pixi run -e seasonality-model python testsmallmodel.py
 
       - name: Report results
-        uses: iterative/setup-cml@latest
+      - uses: iterative/setup-cml@latest
         run: |
           echo "## Model metrics" > report.md
           cat metrics.txt >> report.md
