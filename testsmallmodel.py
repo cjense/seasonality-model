@@ -219,7 +219,7 @@ def main():
     df.to_parquet(cache_path, storage_options=storage_options, index=False)
     print("Cached.")
     
-    df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_2{RESOLUTION}.parquet", storage_options=storage_options)
+    df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet", storage_options=storage_options)
     
     df = df.dropna(subset=['discharge'])
     
