@@ -33,7 +33,8 @@ jobs:
         run: |
           echo "## Model metrics" > report.md
           cat metrics.txt >> report.md
-          cml publish figures/modelresult.png --md >> report.md
+          cml publish figures/beeswarm.png --md >> report.md
+          cml publish figures/heatmap.png --md >> report.md
           cml comment create report.md
 
 

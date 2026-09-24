@@ -241,13 +241,39 @@ def main():
     # print(f"\nModel saved to S3.")
     
     # feature_cols = model.get_booster().feature_names
-
+    
     masker = shap.maskers.Independent(train[FEATURE_COLS], max_samples=len(train))
     explainer = shap.TreeExplainer(model, masker)
     shap_vals = explainer(test[FEATURE_COLS])
-    
-    shap.plots.beeswarm(shap_vals[non_seasonal_vars], show=False)
-    plt.savefig('figures/beeswarm.png', dpi=300)
+
+    # Beeswarm plot
+    shap.plots.beeswarm(shap_vals[:, non_seasonal_vars], show=True, max_display=len(FEATURE_COLS))
+    plt.savefig('figures/beeswarm.png', dpi=300, bbox_inches='tight')
+
+    # Heatmap plot
+    combined = pd.concat([train, test], ignore_index=True).sort_values("time").reset_index(drop=True)
+    shap_vals_combined = explainer(combined[FEATURE_COLS])
+
+    times_combined = combined["time"]
+    instance_order = np.arange(len(times_combined))
+
+    ax = shap.plots.heatmap(shap_vals_combined[:, non_seasonal_vars], instance_order=instance_order, show=False)
+    ax.set_aspect("auto")
+    ax.figure.set_size_inches(15, 5)
+
+    # label the x-axis with the year instead of a raw instance index
+    year_change = times_combined.dt.year.ne(times_combined.dt.year.shift(1))
+    tick_pos = np.flatnonzero(year_change.to_numpy())
+    tick_labels = times_combined.dt.year.iloc[tick_pos].astype(str)
+    ax.set_xticks(tick_pos)
+    ax.set_xticklabels(tick_labels, rotation=0)
+    ax.set_xlabel("Year")
+
+    # mark where train data ends and test data begins
+    split_idx = np.searchsorted(times_combined.values, np.datetime64(TRAIN_CUTOFF))
+    ax.axvline(split_idx - 0.5, color="black", linestyle="--", linewidth=1)
+
+    plt.savefig('figures/heatmap.png', dpi=300)
     
     return model, metrics
 
