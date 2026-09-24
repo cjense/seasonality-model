@@ -6,6 +6,10 @@ jobs:
   train-and-evaluate:
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
 
+    permissions:
+      contents: write        # commit comments (push events)
+      pull-requests: write   # PR comments (pull_request events)
+
     env:
       CUDA_VISIBLE_DEVICES: "0"
 
@@ -38,8 +42,8 @@ jobs:
         run: |
           echo "## Model metrics" > report.md
           cat metrics.txt >> report.md
-          cml publish figures/beeswarm.png --md >> report.md
-          cml publish figures/heatmap.png --md >> report.md
+          echo "![](./figures/beeswarm.png)" >> report.md
+          echo "![](./figures/heatmap.png)" >> report.md
           cml comment create report.md
 
 
