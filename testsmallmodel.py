@@ -76,11 +76,11 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 6) -> pd.DataFram
     df["lag_90d"]   = px["discharge"].shift(steps_90d)
 
     # Rolling mean over past ~30 days (excludes current timestep via shift first)
-    df["vel_roll_30d_mean"] = (
+    df["roll_30d_mean"] = (
         px["discharge"]
         .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).mean())
     )
-    df["vel_roll_30d_std"] = (
+    df["roll_30d_std"] = (
         px["discharge"]
         .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).std())
     )
