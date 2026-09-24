@@ -248,7 +248,7 @@ def main():
 
     # Beeswarm plot
     shap.plots.beeswarm(shap_vals[:, non_seasonal_vars], show=True, max_display=len(FEATURE_COLS))
-    plt.savefig('figures/beeswarm.png', dpi=300, bbox_inches='tight')
+    plt.savefig('./figures/beeswarm.png', dpi=300, bbox_inches='tight')
 
     # Heatmap plot
     combined = pd.concat([train, test], ignore_index=True).sort_values("time").reset_index(drop=True)
@@ -273,7 +273,7 @@ def main():
     split_idx = np.searchsorted(times_combined.values, np.datetime64(TRAIN_CUTOFF))
     ax.axvline(split_idx - 0.5, color="black", linestyle="--", linewidth=1)
 
-    plt.savefig('figures/heatmap.png', dpi=300)
+    plt.savefig('./figures/heatmap.png', dpi=300)
     
     return model, metrics
 
