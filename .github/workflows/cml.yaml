@@ -6,10 +6,6 @@ jobs:
   train-and-evaluate:
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
 
-    permissions:
-      contents: write        # commit comments (push events)
-      pull-requests: write   # PR comments (pull_request events)
-
     env:
       CUDA_VISIBLE_DEVICES: "0"
 
@@ -21,14 +17,6 @@ jobs:
         run: |
           echo "Checking GPU availability..."
           nvidia-smi
-      # echo "CUDA version:"
-      # nvcc --version
-
-      # - name: Set up pixi
-      #   uses: prefix-dev/setup-pixi@v0.9.4
-      #   with:
-      #     pixi-version: v0.66.0
-      #     cache: true
 
       - name: Train model
         run: pixi run -e seasonality-model python testsmallmodel.py

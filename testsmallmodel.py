@@ -14,7 +14,7 @@ from geoshapley import GeoShapleyTreeExplainer
 # ─────────────────────────────────────────────
 GLACIER_NAME  = "zach"           # change to glacier_B for second run
 S3_BUCKET     = "s3://gaia"
-RESOLUTION    = "30D"                  # "6D" or "1D" — start with 6D
+RESOLUTION    = "1D"                  # "6D" or "1D" — start with 6D
 TRAIN_CUTOFF  = "2022-01-01"          # everything before this is train
 TEST_START    = "2022-01-01"          # everything from here is test
 # CACHE_PARQUET = True                  # write flat df to S3 after extraction
@@ -76,11 +76,11 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 6) -> pd.DataFram
     df["lag_90d"]   = px["discharge"].shift(steps_90d)
 
     # Rolling mean over past ~30 days (excludes current timestep via shift first)
-    df["vel_roll_30d_mean"] = (
+    df["roll_30d_mean"] = (
         px["discharge"]
         .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).mean())
     )
-    df["vel_roll_30d_std"] = (
+    df["roll_30d_std"] = (
         px["discharge"]
         .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).std())
     )
@@ -192,34 +192,35 @@ def main():
         # Space
         "x", "y",
     ]
-    df = pd.read_parquet('s3://gaia/cjense/data/testmodel/monthlymean_testdata.parquet', storage_options=storage_options)
+    # df = pd.read_parquet('s3://gaia/cjense/data/testmodel/monthlymean_testdata.parquet', storage_options=storage_options)
+    df = pd.read_parquet('s3://gaia/cjense/data/testmodel/flat_6D.parquet', storage_options=storage_options)
+    ns = pd.read_parquet(
+        f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
+        storage_options=storage_options
+    )
+    df = df.reset_index()
+    ns = ns.reset_index()
+    ns["time"] = pd.to_datetime(ns["time"]).dt.normalize()
+    df["time"] = pd.to_datetime(df["time"])
 
-    # ns = pd.read_parquet(
-    #     f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
-    #     storage_options=storage_options
-    # )
-    # df = df.reset_index()
-    # ns = ns.reset_index()
-    # ns["time"] = pd.to_datetime(ns["time"]).dt.normalize()
-    # df["time"] = pd.to_datetime(df["time"])
+    df = df.merge(ns, on="time", how="outer")
 
-    # df = df.merge(ns, on="time", how="outer")
+    print("Merged spatial and non-spatial dataframes.")
+    # print(df.head())
 
-    # print("Merged spatial and non-spatial dataframes.")
-    # # print(df.head())
-
-    # df = df.resample("ME", on='time').mean().reset_index()
-    # resolution_days = int(RESOLUTION.replace("D", ""))
-    # df = engineer_features(df, resolution_days=resolution_days)
+    df = df.resample("ME", on='time').mean().reset_index()
+    resolution_days = int(RESOLUTION.replace("D", ""))
+    df = engineer_features(df, resolution_days=resolution_days)
     # df = optimize_dtypes(df)
     # print("Datatypes optimized")
 
-    # cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet"
-    # print(f"Writing flat parquet to {cache_path} ...")
-    # df.to_parquet(cache_path, storage_options=storage_options, index=False)
-    # print("Cached.")
+    cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet"
+    print(f"Writing flat parquet to {cache_path} ...")
+    df.to_parquet(cache_path, storage_options=storage_options, index=False)
+    print("Cached.")
     
-    # df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_2{RESOLUTION}.parquet", storage_options=storage_options)
+    df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet", storage_options=storage_options)
+    
     df = df.dropna(subset=['discharge'])
     
     df = df.dropna(subset=['x'])
@@ -249,6 +250,7 @@ def main():
     # Beeswarm plot
     shap.plots.beeswarm(shap_vals[:, non_seasonal_vars], show=False, max_display=len(FEATURE_COLS))
     plt.savefig('./figures/beeswarm.png', dpi=300, bbox_inches='tight')
+    plt.clf()
 
     # Heatmap plot
     combined = pd.concat([train, test], ignore_index=True).sort_values("time").reset_index(drop=True)
