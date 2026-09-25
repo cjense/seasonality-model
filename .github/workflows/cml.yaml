@@ -33,26 +33,3 @@ jobs:
           echo "![](./figures/beeswarm.png)" >> report.md
           echo "![](./figures/heatmap.png)" >> report.md
           cml comment create report.md
-
-
-
-      # - name: Run SHAP analysis
-      #   run: pixi run -e seasonality-model python shap_analysis.py
-
-      # - name: Generate figures
-      #   run: pixi run -e seasonality-model python generate_figures.py
-
-      # - name: Report results to PR
-      #   run: pixi run -e seasonality-model cml comment create --file figures/results.md
-
-      # - name: Save artifacts
-      #   if: always()
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: model-results
-      #     path: |
-      #       figures/
-      #       models/
-      #       *.pkl
-      #       *.h5
-      #     retention-days: 30
