@@ -107,11 +107,7 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 6) -> pd.DataFram
 
     return df
 
-def train_model(train_df: pd.DataFrame, test_df: pd.DataFrame) -> xgb.Booster:
-    # Drop rows with NaN in any feature (from lag windows at start of timeseries)
-    dtrain = xgb.DMatrix(train_df[FEATURE_COLS], label=train_df[TARGET_COL])
-    dtest  = xgb.DMatrix(test_df[FEATURE_COLS],  label=test_df[TARGET_COL])
-
+def train_model(dtrain: xgb.DMatrix, dtest: xgb.DMatrix) -> xgb.Booster:
     # TODO: Grid search for hyperparameters
 
     params = {
@@ -138,10 +134,9 @@ def train_model(train_df: pd.DataFrame, test_df: pd.DataFrame) -> xgb.Booster:
 
     return model
 
-def evaluate(model: xgb.Booster, test_df: pd.DataFrame):
-    dtest = xgb.DMatrix(test_df[FEATURE_COLS])
+def evaluate(model: xgb.Booster, dtest: xgb.DMatrix):
     preds = model.predict(dtest)
-    truth = test_df[TARGET_COL].values
+    truth = dtest.values
 
     # Mask NaN in truth only — can't compute metrics on unknown ground truth
     valid = ~np.isnan(truth)
