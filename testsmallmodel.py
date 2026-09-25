@@ -241,7 +241,7 @@ def main():
         non_spatial = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet", storage_options=storage_options)
         
         spatial_df = spatial_df.reset_index()
-        ns = ns.reset_index()
+        non_spatial = non_spatial.reset_index()
         non_spatial["time"] = pd.to_datetime(non_spatial["time"]).dt.normalize()
         spatial_df["time"] = pd.to_datetime(spatial_df["time"])
 
