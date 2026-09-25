@@ -173,7 +173,7 @@ def shap_explainer(model: xgb.Booster, dtrain: xgb.DMatrix, dtest: xgb.DMatrix, 
     '''
     
     # Create SHAP explainer
-    masker = shap.maskers.Independent(dtrain[FEATURE_COLS], max_samples=len(dtrain))
+    masker = shap.maskers.Independent(dtrain, max_samples=len(dtrain))
     
     # Combine training and testing data to explain both
     combined = pd.concat([dtrain, dtest], ignore_index=True).sort_values("time").reset_index(drop=True)
