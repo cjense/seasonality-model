@@ -136,7 +136,7 @@ def train_model(dtrain: xgb.DMatrix, dtest: xgb.DMatrix) -> xgb.Booster:
 
 def evaluate(model: xgb.Booster, dtest: xgb.DMatrix):
     preds = model.predict(dtest)
-    truth = dtest.values
+    truth = dtest.get_label()
 
     # Mask NaN in truth only — can't compute metrics on unknown ground truth
     valid = ~np.isnan(truth)
