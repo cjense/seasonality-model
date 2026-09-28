@@ -162,16 +162,16 @@ def evaluate(model: xgb.Booster, dtest: xgb.DMatrix):
 
     return {"rmse": rmse, "mae": mae, "r2": r2, "feature_importance": importance}
 
-def shap_explainer(model: xgb.Booster, dtrain: xgb.DMatrix, dtest: xgb.DMatrix, non_seasonal_vars: list):
+def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, non_seasonal_vars: list):
     '''
     Create a SHAP TreeExplainer object to quantify input variable influence on output variables.
     '''
     
     # Create SHAP explainer
-    masker = shap.maskers.Independent(dtrain, max_samples=len(dtrain))
+    masker = shap.maskers.Independent(train, max_samples=len(train))
     
     # Combine training and testing data to explain both
-    combined = pd.concat([dtrain, dtest], ignore_index=True).sort_values("time").reset_index(drop=True)
+    combined = pd.concat([train, test], ignore_index=True).sort_values("time").reset_index(drop=True)
     explainer = shap.TreeExplainer(model, masker)
     shap_vals_combined = explainer(combined[FEATURE_COLS])
 
@@ -289,7 +289,7 @@ def main():
     model.save_model(model_path)
     
     # Calculate SHAP values
-    shapvals = shap_explainer(model, dtrain, dtest, NON_SEASONAL_VARS)
+    shapvals = shap_explainer(model, X_train, X_test, NON_SEASONAL_VARS)
     
     # TODO: Run GeoShapley on the model
     
