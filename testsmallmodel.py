@@ -25,8 +25,8 @@ FEATURE_COLS = [
     # Lag features
     "lag_1step", "lag_30d", "lag_60d", "lag_90d",
     "roll_30d_mean", "roll_30d_std",
-    # Time
-    "time", "season_sin", "season_cos", "year_norm", "time_days",
+    # Time (encoded features only — raw datetime kept separate)
+    "season_sin", "season_cos", "year_norm", "time_days",
     # Space
     "x", "y",
 ]
@@ -162,18 +162,26 @@ def evaluate(model: xgb.Booster, dtest: xgb.DMatrix):
 
     return {"rmse": rmse, "mae": mae, "r2": r2, "feature_importance": importance}
 
-def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, non_seasonal_vars: list):
+def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, time_train: pd.Series, time_test: pd.Series, non_seasonal_vars: list):
     '''
     Create a SHAP TreeExplainer object to quantify input variable influence on output variables.
+    Preserves datetime for heatmap plotting.
     '''
-    
+
     # Create SHAP explainer
     masker = shap.maskers.Independent(train, max_samples=len(train))
-    
-    # Combine training and testing data to explain both
-    combined = pd.concat([train, test], ignore_index=True).sort_values("time").reset_index(drop=True)
+
+    # Combine training and testing data (features only, datetime separate)
+    combined_features = pd.concat([train, test], ignore_index=True)
+    combined_time = pd.concat([time_train, time_test], ignore_index=True)
+
+    # Sort by time and get the sort indices
+    sort_idx = combined_time.argsort()
+    combined_features = combined_features.iloc[sort_idx].reset_index(drop=True)
+    combined_time = combined_time.iloc[sort_idx].reset_index(drop=True)
+
     explainer = shap.TreeExplainer(model, masker)
-    shap_vals_combined = explainer(combined[FEATURE_COLS])
+    shap_vals_combined = explainer(combined_features)
 
     ##### Beeswarm plot #####
     shap.plots.beeswarm(shap_vals_combined[:, non_seasonal_vars], show=False, max_display=len(FEATURE_COLS))
@@ -186,23 +194,22 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     plt.clf()
 
     ##### Heatmap plot #####
-    times_combined = combined["time"]
-    instance_order = np.arange(len(times_combined))
+    instance_order = np.arange(len(combined_time))
 
     ax = shap.plots.heatmap(shap_vals_combined[:, non_seasonal_vars], instance_order=instance_order, show=False)
     ax.set_aspect("auto")
     ax.figure.set_size_inches(15, 5)
 
     # Label the x-axis with the year instead of a raw instance index
-    year_change = times_combined.dt.year.ne(times_combined.dt.year.shift(1))
+    year_change = combined_time.dt.year.ne(combined_time.dt.year.shift(1))
     tick_pos = np.flatnonzero(year_change.to_numpy())
-    tick_labels = times_combined.dt.year.iloc[tick_pos].astype(str)
+    tick_labels = combined_time.dt.year.iloc[tick_pos].astype(str)
     ax.set_xticks(tick_pos)
     ax.set_xticklabels(tick_labels, rotation=0)
     ax.set_xlabel("Year")
 
     # Mark where train data ends and test data begins
-    split_idx = np.searchsorted(times_combined.values, np.datetime64(TRAIN_CUTOFF))
+    split_idx = np.searchsorted(combined_time.values, np.datetime64(TRAIN_CUTOFF))
     ax.axvline(split_idx - 0.5, color="black", linestyle="--", linewidth=1)
 
     heatmap_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}.png'
@@ -264,15 +271,19 @@ def main():
     # Drop NaNs from target feature
     # You can't predict NaN values!
     df = df.dropna(subset=[TARGET_COL])
-    
+
+    # Keep time separate for SHAP analysis (datetime not allowed in DMatrix)
+    time_col = df["time"].copy()
+
     # Split data into train and test set
     # X is the training data, y is the target
     X_train, X_test, y_train, y_test = train_test_split(df[FEATURE_COLS], df[TARGET_COL], test_size=0.2, random_state=SPLIT_SEED)
-    
+    time_train, time_test = train_test_split(time_col, test_size=0.2, random_state=SPLIT_SEED)
+
     # Delete full dataframe from memory to conserve memory
-    del df
-    
-    # Construct DMatrices for training and testing
+    del df, time_col
+
+    # Construct DMatrices for training and testing (datetime excluded)
     dtrain = xgb.DMatrix(X_train, label=y_train)
     dtest = xgb.DMatrix(X_test, label=y_test)
     
@@ -289,7 +300,7 @@ def main():
     model.save_model(model_path)
     
     # Calculate SHAP values
-    shapvals = shap_explainer(model, X_train, X_test, NON_SEASONAL_VARS)
+    shapvals = shap_explainer(model, X_train, X_test, time_train, time_test, NON_SEASONAL_VARS)
     
     # TODO: Run GeoShapley on the model
     
