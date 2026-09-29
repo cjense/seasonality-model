@@ -251,6 +251,7 @@ def geoshapley_explainer(model: xgb.Booster, train: pd.DataFrame):
     return geoshapleyvals
 
 def main():
+    print("in main loop")
     
     # Look for existing file of the correct resolution
     cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet"
@@ -322,6 +323,7 @@ def main():
     s3_model_path = f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.json"
     try:
         # Try to load an existing model
+        print("Trying to load existing model...")
         try:
             # Try grabbing model from S3
             fs.get(s3_model_path, local_model_path)
