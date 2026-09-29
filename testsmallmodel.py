@@ -289,23 +289,33 @@ def main():
     
     # TODO: Grid search for hyperparameters
     
-    # Train the model
-    model = train_model(dtrain, dtest)
+    # TODO: Change model path to .../negis_seasonality/seasonality-model/models/...
+    local_model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/models/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.json"
+    s3_model_path = f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.json"
+    try:
+        # Try to load an existing model
+        fs.get(s3_model_path, local_model_path)
+        
+        model = xgb.Booster()
+        model.load_model(local_model_path)
+        
+    except:
+        # If the model doesn't exist yet, train a new model
+        model = train_model(dtrain, dtest)
+        
+        # Calculate model metrics
+        metrics = evaluate(model, dtest)
     
-    # Calculate model metrics
-    metrics = evaluate(model, dtest)
-    
-    # Save the model to disk
-    model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/models/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.json"
-    model.save_model(model_path)
+        # Save the model to disk
+        model.save_model(local_model_path)
+        
+        # Save the model to S3
+        fs.put(local_model_path, s3_model_path)
     
     # Calculate SHAP values
     shapvals = shap_explainer(model, X_train, X_test, time_train, time_test, NON_SEASONAL_VARS)
     
     # TODO: Run GeoShapley on the model
-    
-    # Save the model to S3
-    fs.put(model_path, f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.json")
     
     return model, metrics, shapvals
 
