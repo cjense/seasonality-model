@@ -26,7 +26,7 @@ FEATURE_COLS = [
     "lag_1step", "lag_30d", "lag_60d", "lag_90d",
     "roll_30d_mean", "roll_30d_std",
     # Time
-    "season_sin", "season_cos", "year_norm", "time_days",
+    "time", "season_sin", "season_cos", "year_norm", "time_days",
     # Space
     "x", "y",
 ]
@@ -221,6 +221,7 @@ def main():
     try:
         print(f"Looking for cached flat parquet at {cache_path} ...")
         df = pd.read_parquet(cache_path, storage_options=storage_options)
+        print("Found cached file.")
 
         # Record data size and location
         with open("modelresults.md", 'a') as outfile:
@@ -230,6 +231,8 @@ def main():
             df.head().to_markdown(buf=outfile)
 
     except Exception:
+        print("Did not find cached file. Making new dataframe.")
+        
         # Load spatial and non-spatial variables.
         # This method conserves memory by loading the non-spatial variables lazily and merging once
         spatial_df = pd.read_parquet('s3://gaia/cjense/data/testmodel/velocity_melt_2000_2008.parquet', storage_options=storage_options)
@@ -257,9 +260,6 @@ def main():
             outfile.write("### Data\n")
             outfile.write(f"No cached file found. Made new file at {RESOLUTION} resolution and uploaded it to s3: {cache_path}.")
             df.head().to_markdown(buf=outfile)
-    
-    # Read combo spatial and non-spatial variables parquet
-    df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet", storage_options=storage_options)
     
     # Drop NaNs from target feature
     # You can't predict NaN values!
