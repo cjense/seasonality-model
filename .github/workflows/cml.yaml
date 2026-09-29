@@ -7,7 +7,7 @@ jobs:
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
 
     env:
-      CUDA_VISIBLE_DEVICES:"0"
+      CUDA_VISIBLE_DEVICES: "0"
 
     steps:
       - name: Checkout repository
