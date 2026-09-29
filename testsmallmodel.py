@@ -343,14 +343,14 @@ def main():
         try:
             # Try grabbing model from S3
             fs.get(s3_model_path, local_model_path)
-            model = xgb.Booster()
+            model = xgb.Booster(device="cuda")
             model.load_model(local_model_path)
 
             print("Model found in S3 bucket.")
 
         except:
             # Try grabbing model from disk
-            model = xgb.Booster()
+            model = xgb.Booster(device="cuda")
             model.load_model(local_model_path)
 
             print("Model loaded from disk.")
