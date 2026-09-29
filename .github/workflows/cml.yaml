@@ -6,9 +6,6 @@ jobs:
   train-and-evaluate:
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
 
-    env:
-      CUDA_VISIBLE_DEVICES: "0"
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,7 +26,7 @@ jobs:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "## Model metrics" > report.md
-          cat metrics.txt >> report.md
+          cat modelresults.md >> report.md
           echo "![](./figures/beeswarm.png)" >> report.md
           echo "![](./figures/heatmap.png)" >> report.md
           cml comment create report.md
