@@ -6,6 +6,7 @@ import os
 import shap
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+from geoshapley import GeoShapleyTreeExplainer
 
 ########## CONFIG ##########
 GLACIER_NAME  = "zach"
@@ -289,18 +290,30 @@ def main():
     
     # TODO: Grid search for hyperparameters
     
-    # TODO: Change model path to .../negis_seasonality/seasonality-model/models/...
-    local_model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/models/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.json"
+    local_model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/models/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.json"
     s3_model_path = f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.json"
     try:
         # Try to load an existing model
-        fs.get(s3_model_path, local_model_path)
+        try:
+            # Try grabbing model from S3
+            fs.get(s3_model_path, local_model_path)
+            model = xgb.Booster()
+            model.load_model(local_model_path)
+            
+            print("Model found in S3 bucket.")
+            
+        except:
+            # Try grabbing model from disk
+            model = xgb.Booster()
+            model.load_model(local_model_path)
+            
+            print("Model loaded from disk.")
         
-        model = xgb.Booster()
-        model.load_model(local_model_path)
+        print(f"Loaded existing model {GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.")
         
     except:
         # If the model doesn't exist yet, train a new model
+        print("Existing model not found. Training new model...")
         model = train_model(dtrain, dtest)
         
         # Calculate model metrics
@@ -308,11 +321,14 @@ def main():
     
         # Save the model to disk
         model.save_model(local_model_path)
+        print(f"Model saved to disk: " + local_model_path)
         
         # Save the model to S3
         fs.put(local_model_path, s3_model_path)
+        print(f"Model saved to S3: " + s3_model_path)
     
     # Calculate SHAP values
+    print("Calculating SHAP values...")
     shapvals = shap_explainer(model, X_train, X_test, time_train, time_test, NON_SEASONAL_VARS)
     
     # TODO: Run GeoShapley on the model
