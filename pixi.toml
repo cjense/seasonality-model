@@ -13,7 +13,7 @@ seasonality-model = ["default"]
 [dependencies]
 numpy = ">=2.5.3,<3"
 xgboost = ">=3.4.2,<4"
-dask = ">=2026.7.1,<2027"
+dask = ">=2026.8.0,<2027"
 pandas = ">=3.0.6,<4"
 xarray = ">=2026.7.0,<2027"
 shap = ">=0.52.0,<0.53"
@@ -22,9 +22,6 @@ jupyter = ">=1.1.1,<2"
 s3fs = ">=2026.7.0,<2027"
 boto3 = ">=1.43.75,<2"
 tabulate = ">=0.10.0,<0.11"
-dask-cuda = ">=26.8,<27"
-# conda-forge build needed by dask-cuda; strict priority would otherwise pick the older nvidia-channel one
-cuda-core = { version = ">=0.5.1,<2", channel = "conda-forge" }
 
 [pypi-dependencies]
 geoshapley = ">=0.2.0.0, <0.3"

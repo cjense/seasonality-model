@@ -1,14 +1,11 @@
 import numpy as np
 import pandas as pd
-import dask
-import dask.dataframe as dd
 import xgboost as xgb
-from dask.distributed import Client
-from dask_cuda import LocalCUDACluster
 import s3fs
 import os
 import shap
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 from geoshapley import GeoShapleyTreeExplainer
 
 ########## CONFIG ##########
@@ -20,6 +17,7 @@ TEST_START    = "2022-01-01"          # everything from here is test
 CACHE_PARQUET = True                  # write flat df to S3 after extraction
 MODEL_SEED    = 42                    # random seed to train model
 SPLIT_SEED    = 123                   # random seed to split train and test data
+SHAP_CHUNK_ROWS   = 5_000_000         # rows per GPU SHAP batch (lower if GPU runs out of memory)
 SHAP_PLOT_SAMPLES = 20_000            # rows drawn for beeswarm/heatmap plots
 
 FEATURE_COLS = [
@@ -112,7 +110,7 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 6) -> pd.DataFram
 
     return df
 
-def train_model(client: Client, dtrain: xgb.dask.DaskQuantileDMatrix, dtest: xgb.dask.DaskQuantileDMatrix) -> xgb.Booster:
+def train_model(dtrain: xgb.DMatrix, dtest: xgb.DMatrix) -> xgb.Booster:
     # TODO: Grid search for hyperparameters
 
     params = {
@@ -128,9 +126,7 @@ def train_model(client: Client, dtrain: xgb.dask.DaskQuantileDMatrix, dtest: xgb
         "seed":             MODEL_SEED,
     }
 
-    # Trains across every GPU worker in the cluster
-    output = xgb.dask.train(
-        client,
+    model = xgb.train(
         params,
         dtrain,
         num_boost_round=1000,
@@ -139,28 +135,27 @@ def train_model(client: Client, dtrain: xgb.dask.DaskQuantileDMatrix, dtest: xgb
         verbose_eval=25,
     )
 
-    return output["booster"]
+    return model
 
-def evaluate(client: Client, model: xgb.Booster, test: dd.DataFrame):
-    # Predictions are computed on the GPU workers; only summary sums come back
-    preds = xgb.dask.inplace_predict(client, model, test[FEATURE_COLS])
-    truth = test[TARGET_COL].astype("float64")
-    err = truth - preds
+def evaluate(model: xgb.Booster, dtest: xgb.DMatrix):
+    preds = model.predict(dtest)
+    truth = dtest.get_label()
 
-    n, sse, sae, sum_y, sum_y2 = dask.compute(
-        truth.count(), (err ** 2).sum(), err.abs().sum(), truth.sum(), (truth ** 2).sum()
-    )
+    # Mask NaN in truth only — can't compute metrics on unknown ground truth
+    valid = ~np.isnan(truth)
+    preds = preds[valid]
+    truth = truth[valid]
 
-    rmse = np.sqrt(sse / n)
-    mae  = sae / n
-    truth_var = sum_y2 - sum_y ** 2 / n
-    r2 = 1 - sse / truth_var if truth_var > 0 else float("nan")
+    rmse = np.sqrt(np.mean((preds - truth) ** 2))
+    mae  = np.mean(np.abs(preds - truth))
+    truth_var = np.sum((truth - truth.mean()) ** 2)
+    r2 = 1 - np.sum((truth - preds) ** 2) / truth_var if truth_var > 0 else float("nan")
 
     importance = model.get_score(importance_type="gain")
     importance = pd.Series(importance).sort_values(ascending=False)
     print(f"\n── Top 10 features by gain ───────")
     print(importance.head(10).to_string())
-    
+
     # Write metrics to file for easy viewing
     with open("modelresults.md", 'a') as outfile:
         outfile.write("### Model Metrics\n")
@@ -170,37 +165,51 @@ def evaluate(client: Client, model: xgb.Booster, test: dd.DataFrame):
 
     return {"rmse": rmse, "mae": mae, "r2": r2, "feature_importance": importance}
 
-def shap_explainer(client: Client, model: xgb.Booster, df: dd.DataFrame, n_rows: int, non_seasonal_vars: list):
+def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, time_train: pd.Series, time_test: pd.Series, non_seasonal_vars: list):
     '''
-    Compute SHAP values for every row with GPU TreeSHAP (path-dependent), spread across all GPU workers.
+    Create a SHAP TreeExplainer object to quantify input variable influence on output variables.
     Preserves datetime for heatmap plotting.
     '''
 
-    print("Calculating SHAP values on GPU workers in shap_explainer...")
-    # Output has one column per feature plus a final bias column
-    contribs = xgb.dask.predict(client, model, df[FEATURE_COLS], pred_contribs=True)
-    contribs = contribs.rename(columns=dict(zip(range(len(FEATURE_COLS) + 1), FEATURE_COLS + ["bias"])))
-    contribs["time"] = df["time"]
+    # Combine training and testing data (features only, datetime separate)
+    combined_features = pd.concat([train, test], ignore_index=True)
+    combined_time = pd.concat([time_train, time_test], ignore_index=True)
 
-    # Each worker writes its own partitions to S3 (a directory of parquet files)
+    # Sort by time and get the sort indices
+    sort_idx = combined_time.argsort()
+    combined_features = combined_features.iloc[sort_idx].reset_index(drop=True)
+    combined_time = combined_time.iloc[sort_idx].reset_index(drop=True)
+
+    # GPU TreeSHAP via XGBoost (path-dependent). Last column of the output is the bias term.
+    print("Calculating SHAP values on GPU in shap_explainer...")
+    model.set_param({"device": "cuda"})
+    contribs = np.empty((len(combined_features), len(FEATURE_COLS) + 1), dtype=np.float32)
+    for start in range(0, len(combined_features), SHAP_CHUNK_ROWS):
+        chunk = combined_features.iloc[start:start + SHAP_CHUNK_ROWS]
+        contribs[start:start + len(chunk)] = model.predict(xgb.DMatrix(chunk), pred_contribs=True)
+        print(f"  SHAP rows {start + len(chunk):,} / {len(combined_features):,}")
+
+    # Save SHAP values to parquet
     shap_save_path = f'{S3_BUCKET}/cjense/data/testmodel/shap_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}.parquet'
-    contribs.to_parquet(shap_save_path, storage_options=storage_options, write_index=False)
+    df_shap = pd.DataFrame(contribs[:, :-1], columns=FEATURE_COLS)
+    df_shap["time"] = combined_time.values
+    df_shap.to_parquet(shap_save_path, storage_options=storage_options, index=False)
+    del df_shap
 
     print(f"SHAP values saved to S3: " + shap_save_path)
 
-    # Plot a random subsample in time order — plotting every row is far too slow
-    sample = df.sample(frac=min(1.0, SHAP_PLOT_SAMPLES / n_rows), random_state=MODEL_SEED).compute()
-    sample = sample.sort_values("time").reset_index(drop=True)
-    combined_time = sample["time"]
-
-    model.set_param({"device": "cuda"})
-    sample_contribs = model.predict(xgb.DMatrix(sample[FEATURE_COLS]), pred_contribs=True)
+    # Plot a random subsample in time order
+    rng = np.random.default_rng(MODEL_SEED)
+    plot_idx = np.sort(rng.choice(len(combined_features), size=min(SHAP_PLOT_SAMPLES, len(combined_features)), replace=False))
     shap_vals_combined = shap.Explanation(
-        values=sample_contribs[:, :-1],
-        base_values=sample_contribs[:, -1],
-        data=sample[FEATURE_COLS].to_numpy(dtype=np.float32),
+        values=contribs[plot_idx, :-1],
+        base_values=contribs[plot_idx, -1],
+        data=combined_features.iloc[plot_idx].to_numpy(dtype=np.float32),
         feature_names=FEATURE_COLS,
     )
+    combined_time = combined_time.iloc[plot_idx].reset_index(drop=True)
+    del contribs
+
     ##### Beeswarm plot #####
     shap.plots.beeswarm(shap_vals_combined[:, non_seasonal_vars], show=False, max_display=len(FEATURE_COLS))
     beeswarm_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}.png'
@@ -236,98 +245,96 @@ def shap_explainer(client: Client, model: xgb.Booster, df: dd.DataFrame, n_rows:
     plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
     fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}.png')
-    
+
     return shap_vals_combined
 
 # def geoshapley_explainer(model: xgb.Booster, train: pd.DataFrame):
 #     '''
 #     Create a GeoShapley TreeExplainer to explain spatial characteristics of the model.
 #     '''
-    
+
 #     print("Calculating GeoShapley values in geoshapley_explainer...")
 #     tree_explainer = GeoShapleyTreeExplainer(model, g=2)
 #     geoshapleyvals = tree_explainer.explain(train)
 
 #     # geoshapleyvals.summary_plot()
-    
+
 #     # Save SHAP values to dataframe and CSV
 #     csv_save_path = f'{S3_BUCKET}/cjense/data/testmodel/geoshapley_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}.csv'
 #     df_shap = pd.DataFrame(geoshapleyvals.values, columns=FEATURE_COLS)
 #     df_shap.to_csv(csv_save_path, index=False)
-    
+
 #     print(f"GeoShapley value CSV saved to S3: " + csv_save_path)
 
 #     return geoshapleyvals
 
-def build_flat_cache(cache_path: str):
-    '''
-    Build the flat feature table from the spatial and non-spatial parquets and write it to S3.
-    '''
-    # Load spatial and non-spatial variables.
-    # This method conserves memory by loading the non-spatial variables lazily and merging once
-    spatial_df = pd.read_parquet('s3://gaia/cjense/data/testmodel/velocity_melt_2000_2008.parquet', storage_options=storage_options)
-    non_spatial = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet", storage_options=storage_options)
-    
-    spatial_df = spatial_df.reset_index()
-    non_spatial = non_spatial.reset_index()
-    non_spatial["time"] = pd.to_datetime(non_spatial["time"]).dt.normalize()
-    spatial_df["time"] = pd.to_datetime(spatial_df["time"])
-
-    df = spatial_df.merge(non_spatial, on="time", how="outer")
-
-    # df = df.resample("ME", on='time').mean().reset_index()
-    resolution_days = int(RESOLUTION.replace("D", ""))
-    df = engineer_features(df, resolution_days=resolution_days)
-    
-    # TODO: Optimize datatypes (convert to float32) to conserve memory
-
-    print(f"Writing flat parquet to {cache_path} ...")
-    df.to_parquet(cache_path, storage_options=storage_options, index=False)
-    
-    # Record making cached file
-    with open("modelresults.md", 'a') as outfile:
-        outfile.write("### Data\n")
-        outfile.write(f"No cached file found. Made new file at {RESOLUTION} resolution and uploaded it to s3: {cache_path}.")
-        df.head().to_markdown(buf=outfile)
-
-def main(client: Client):
-    n_workers = len(client.scheduler_info()["workers"])
-    print(f"Dask cluster running with {n_workers} GPU worker(s)")
-
+def main():
     # Look for existing file of the correct resolution
     cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet"
-    print(f"Looking for cached flat parquet at {cache_path} ...")
-    cache_found = fs.exists(cache_path)
-    if cache_found:
+    try:
+        print(f"Looking for cached flat parquet at {cache_path} ...")
+        df = pd.read_parquet(cache_path, storage_options=storage_options)
         print("Found cached file.")
-    else:
-        print("Did not find cached file. Making new dataframe.")
-        build_flat_cache(cache_path)
 
-    # Read the flat table in parallel across the workers
-    df = dd.read_parquet(cache_path, columns=FEATURE_COLS + [TARGET_COL, "time"], storage_options=storage_options)
-    if df.npartitions < 4 * n_workers:
-        df = df.repartition(npartitions=4 * n_workers)
-
-    # Drop NaNs from target feature
-    # You can't predict NaN values!
-    df = df.dropna(subset=[TARGET_COL]).persist()
-    n_rows = len(df)
-
-    if cache_found:
         # Record data size and location
         with open("modelresults.md", 'a') as outfile:
             outfile.write("### Data\n")
             outfile.write(f"Loaded from cache at {cache_path}.")
-            outfile.write(f"Loaded from cache: {n_rows:,} rows with non-NaN {TARGET_COL}, {df.memory_usage(deep=True).sum().compute() / 1e9:.2f} GB\n")
+            outfile.write(f"Loaded from cache: {len(df):,} rows, {df.memory_usage(deep=True).sum() / 1e9:.2f} GB\n")
             df.head().to_markdown(buf=outfile)
 
-    # Split data into train and test set (time column stays alongside for SHAP plots)
-    train, test = df.random_split([0.8, 0.2], random_state=SPLIT_SEED)
-    train, test = dask.persist(train, test)
-    
+    except Exception:
+        print("Did not find cached file. Making new dataframe.")
+
+        # Load spatial and non-spatial variables.
+        # This method conserves memory by loading the non-spatial variables lazily and merging once
+        spatial_df = pd.read_parquet('s3://gaia/cjense/data/testmodel/velocity_melt_2000_2008.parquet', storage_options=storage_options)
+        non_spatial = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet", storage_options=storage_options)
+
+        spatial_df = spatial_df.reset_index()
+        non_spatial = non_spatial.reset_index()
+        non_spatial["time"] = pd.to_datetime(non_spatial["time"]).dt.normalize()
+        spatial_df["time"] = pd.to_datetime(spatial_df["time"])
+
+        df = spatial_df.merge(non_spatial, on="time", how="outer")
+
+        # df = df.resample("ME", on='time').mean().reset_index()
+        resolution_days = int(RESOLUTION.replace("D", ""))
+        df = engineer_features(df, resolution_days=resolution_days)
+
+        # TODO: Optimize datatypes (convert to float32) to conserve memory
+
+        cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet"
+        print(f"Writing flat parquet to {cache_path} ...")
+        df.to_parquet(cache_path, storage_options=storage_options, index=False)
+
+        # Record making cached file
+        with open("modelresults.md", 'a') as outfile:
+            outfile.write("### Data\n")
+            outfile.write(f"No cached file found. Made new file at {RESOLUTION} resolution and uploaded it to s3: {cache_path}.")
+            df.head().to_markdown(buf=outfile)
+
+    # Drop NaNs from target feature
+    # You can't predict NaN values!
+    df = df.dropna(subset=[TARGET_COL])
+
+    # Keep time separate for SHAP analysis (datetime not allowed in DMatrix)
+    time_col = df["time"].copy()
+
+    # Split data into train and test set
+    # X is the training data, y is the target
+    X_train, X_test, y_train, y_test = train_test_split(df[FEATURE_COLS], df[TARGET_COL], test_size=0.2, random_state=SPLIT_SEED)
+    time_train, time_test = train_test_split(time_col, test_size=0.2, random_state=SPLIT_SEED)
+
+    # Delete full dataframe from memory to conserve memory
+    del df, time_col
+
+    # Construct DMatrices for training and testing (datetime excluded)
+    dtrain = xgb.DMatrix(X_train, label=y_train)
+    dtest = xgb.DMatrix(X_test, label=y_test)
+
     # TODO: Grid search for hyperparameters
-    
+
     local_model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/models/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.json"
     s3_model_path = f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.json"
     try:
@@ -338,51 +345,44 @@ def main(client: Client):
             fs.get(s3_model_path, local_model_path)
             model = xgb.Booster()
             model.load_model(local_model_path)
-            
+
             print("Model found in S3 bucket.")
-            
+
         except:
             # Try grabbing model from disk
             model = xgb.Booster()
             model.load_model(local_model_path)
-            
+
             print("Model loaded from disk.")
-        
+
         print(f"Loaded existing model {GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.")
-        
+
     except:
         # If the model doesn't exist yet, train a new model
         print("Existing model not found. Training new model...")
+        model = train_model(dtrain, dtest)
 
-        # Construct distributed DMatrices for training and testing (datetime excluded)
-        dtrain = xgb.dask.DaskQuantileDMatrix(client, train[FEATURE_COLS], train[TARGET_COL])
-        dtest = xgb.dask.DaskQuantileDMatrix(client, test[FEATURE_COLS], test[TARGET_COL], ref=dtrain)
-
-        model = train_model(client, dtrain, dtest)
-    
         # Save the model to disk
         model.save_model(local_model_path)
         print(f"Model saved to disk: " + local_model_path)
-        
+
         # Save the model to S3
         fs.put(local_model_path, s3_model_path)
         print(f"Model saved to S3: " + s3_model_path)
-    
+
     # Calculate model metrics for both loaded and newly trained models
     model.set_param({"device": "cuda"})
-    metrics = evaluate(client, model, test)
-    
-    # Calculate SHAP values on all (train + test) rows
+    metrics = evaluate(model, dtest)
+
+    # Calculate SHAP values
     print("Calculating SHAP values...")
-    shapvals = shap_explainer(client, model, df, n_rows, NON_SEASONAL_VARS)
-    
+    shapvals = shap_explainer(model, X_train, X_test, time_train, time_test, NON_SEASONAL_VARS)
+
     # Calculate GeoShapley values
     # print("Calculating GeoShapley values...")
     # geoshapleyvals = geoshapley_explainer(model, X_train)
-    
+
     return model, metrics, shapvals#, geoshapleyvals
 
 if __name__ == "__main__":
-    # One Dask worker per visible GPU (all GPUs allocated to the job unless CUDA_VISIBLE_DEVICES is set)
-    with LocalCUDACluster() as cluster, Client(cluster) as client:
-        model, metrics, shapvals = main(client)
+    model, metrics, shapvals = main()
