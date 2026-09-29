@@ -181,8 +181,16 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     combined_features = combined_features.iloc[sort_idx].reset_index(drop=True)
     combined_time = combined_time.iloc[sort_idx].reset_index(drop=True)
 
+    print("Calculating SHAP values...")
     explainer = shap.TreeExplainer(model, masker)
     shap_vals_combined = explainer(combined_features)
+
+    # Save SHAP values to dataframe and CSV
+    csv_save_path = f'/{S3_BUCKET}/cjense/data/testmodel/shap_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}.csv'
+    df_shap = pd.DataFrame(shap_vals_combined.values, columns=FEATURE_COLS)
+    df_shap.to_csv(csv_save_path, index=False)
+    
+    print(f"SHAP value CSV saved to S3: " + csv_save_path)
 
     ##### Beeswarm plot #####
     shap.plots.beeswarm(shap_vals_combined[:, non_seasonal_vars], show=False, max_display=len(FEATURE_COLS))
@@ -221,6 +229,26 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     fs.put(heatmap_path, f'/{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}.png')
     
     return shap_vals_combined
+
+def geoshapley_explainer(model: xgb.Booster, train: pd.DataFrame):
+    '''
+    Create a GeoShapley TreeExplainer to explain spatial characteristics of the model.
+    '''
+    
+    print("Calculating GeoShapley values...")
+    tree_explainer = GeoShapleyTreeExplainer(model, g=2)
+    geoshapleyvals = tree_explainer.explain(train)
+
+    # geoshapleyvals.summary_plot()
+    
+    # Save SHAP values to dataframe and CSV
+    csv_save_path = f'/{S3_BUCKET}/cjense/data/testmodel/geoshapley_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}.csv'
+    df_shap = pd.DataFrame(geoshapleyvals.values, columns=FEATURE_COLS)
+    df_shap.to_csv(csv_save_path, index=False)
+    
+    print(f"GeoShapley value CSV saved to S3: " + csv_save_path)
+
+    return geoshapleyvals
 
 def main():
     
@@ -331,9 +359,11 @@ def main():
     print("Calculating SHAP values...")
     shapvals = shap_explainer(model, X_train, X_test, time_train, time_test, NON_SEASONAL_VARS)
     
-    # TODO: Run GeoShapley on the model
+    # Calculate GeoShapley values
+    print("Calculating GeoShapley values...")
+    geoshapleyvals = geoshapley_explainer(model, X_train)
     
-    return model, metrics, shapvals
+    return model, metrics, shapvals, geoshapleyvals
 
 if __name__ == "__main__":
-    model, metrics, shapvals = main()
+    model, metrics, shapvals, geoshapleyvals = main()
