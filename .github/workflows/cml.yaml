@@ -15,16 +15,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Verify GPU access
-        run: |
-          echo "Checking GPU availability..."3
-          nvidia-smi
-      
+        run: nvidia-smi
+
       - name: Clone SHAP for GPU build
         run: |
-          cd /gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/
-          git clone https://github.com/shap/shap.git shap
+          if [ ! -d "$GITHUB_WORKSPACE/shap" ]; then
+            git clone https://github.com/shap/shap.git "$GITHUB_WORKSPACE/shap"
+          fi
 
       - name: Train model
+        working-directory: ${{ github.workspace }}
         run: pixi run -e seasonality-model python testsmallmodel.py
 
       - name: Set up CML
