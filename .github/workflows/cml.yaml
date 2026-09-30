@@ -18,6 +18,11 @@ jobs:
         run: |
           echo "Checking GPU availability..."3
           nvidia-smi
+      
+      - name: Clone SHAP for GPU build
+        run: |
+          cd /gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/
+          git clone https://github.com/shap/shap.git shap
 
       - name: Train model
         run: pixi run -e seasonality-model python testsmallmodel.py
