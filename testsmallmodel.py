@@ -123,6 +123,7 @@ def train_model(dtrain: xgb.DMatrix, dtest: xgb.DMatrix) -> xgb.Booster:
         "subsample":        0.8,
         "colsample_bytree": 0.8,
         "min_child_weight": 10,
+        "nthread":          24,
         "seed":             MODEL_SEED,
     }
 
