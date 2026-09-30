@@ -12,7 +12,7 @@ seasonality-model = ["default"]
 
 [dependencies]
 numpy = ">=2.5.3,<3"
-xgboost = ">=3.4.2,<4"
+xgboost = {version = "*", channel = "rapidsai"}
 dask = ">=2026.8.0,<2027"
 pandas = ">=3.0.6,<4"
 xarray = ">=2026.7.0,<2027"
