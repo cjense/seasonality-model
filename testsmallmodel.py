@@ -354,8 +354,9 @@ def main():
     s3_model_path = f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}.json"
     try:
         # Try to load an existing model
-        print("Trying to load existing model...")
         try:
+            print("Trying to load existing model at " + s3_model_path)
+            
             # Try grabbing model from S3
             fs.get(s3_model_path, local_model_path)
             model = xgb.Booster(device="cuda")
@@ -364,6 +365,8 @@ def main():
             print("Model found in S3 bucket.")
 
         except:
+            print("Trying to load existing model at " + local_model_path)
+            
             # Try grabbing model from disk
             model = xgb.Booster(device="cuda")
             model.load_model(local_model_path)
