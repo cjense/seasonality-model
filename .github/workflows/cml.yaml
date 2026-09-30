@@ -7,7 +7,8 @@ jobs:
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
 
     env:
-      CUDA_VISIBLE_DEVICES: "0"
+      CUDA_VISIBLE_DEVICES: "0,1"
+      XGB_GPU: 1
 
     steps:
       - name: Checkout repository
@@ -15,7 +16,7 @@ jobs:
 
       - name: Verify GPU access
         run: |
-          echo "Checking GPU availability..."
+          echo "Checking GPU availability..."3
           nvidia-smi
 
       - name: Train model

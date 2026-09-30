@@ -114,13 +114,14 @@ def train_model(dtrain: xgb.DMatrix, dtest: xgb.DMatrix) -> xgb.Booster:
     # TODO: Grid search for hyperparameters
 
     params = {
-        "tree_method":      "hist",
+        "tree_method":      "gpu_hist",
+        "gpu_id":           0,
         "device":           "cuda",
         "objective":        "reg:squarederror",
         "eval_metric":      ["rmse", "mae"],
         "max_depth":        6,
         "eta":              0.05,
-        "subsample":        0.8,
+        "subsample":        0.8,                    # Use 80% of data per tree
         "colsample_bytree": 0.8,
         "min_child_weight": 10,
         "nthread":          24,
@@ -168,7 +169,7 @@ def evaluate(model: xgb.Booster, dtest: xgb.DMatrix):
 
 def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, time_train: pd.Series, time_test: pd.Series, non_seasonal_vars: list):
     '''
-    Create a SHAP TreeExplainer object to quantify input variable influence on output variables.
+    Create a SHAP GPUTreeExplainer object to quantify input variable influence on output variables.
     Preserves datetime for heatmap plotting.
     '''
 
@@ -181,14 +182,33 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     combined_features = combined_features.iloc[sort_idx].reset_index(drop=True)
     combined_time = combined_time.iloc[sort_idx].reset_index(drop=True)
 
-    # GPU TreeSHAP via XGBoost (path-dependent). Last column of the output is the bias term.
+    # GPU TreeSHAP via GPUTreeExplainer
     print("Calculating SHAP values on GPU in shap_explainer...")
     model.set_param({"device": "cuda"})
-    contribs = np.empty((len(combined_features), len(FEATURE_COLS) + 1), dtype=np.float32)
-    for start in range(0, len(combined_features), SHAP_CHUNK_ROWS):
+
+    explainer = shap.GPUTreeExplainer(
+        model,
+        feature_perturbation="tree_path_dependent",
+        model_output="raw",
+    )
+
+    # Compute in chunks to avoid OOM; H200 has 141 GB so chunks can be large
+    n_rows = len(combined_features)
+    shap_chunks = []
+    for start in range(0, n_rows, SHAP_CHUNK_ROWS):
         chunk = combined_features.iloc[start:start + SHAP_CHUNK_ROWS]
-        contribs[start:start + len(chunk)] = model.predict(xgb.DMatrix(chunk), pred_contribs=True)
-        print(f"  SHAP rows {start + len(chunk):,} / {len(combined_features):,}")
+        sv = explainer.shap_values(chunk)          # (chunk_size, n_features)
+        shap_chunks.append(sv)
+        print(f"  SHAP rows {min(start + SHAP_CHUNK_ROWS, n_rows):,} / {n_rows:,}")
+
+    shap_vals = np.vstack(shap_chunks)             # (n_rows, n_features)
+    base_value = explainer.expected_value          # scalar (or array for multiclass)
+
+    # Build contribs array matching original shape: (n_rows, n_features + 1)
+    # Last column is the bias term, matching the old pred_contribs=True convention
+    contribs = np.empty((n_rows, shap_vals.shape[1] + 1), dtype=np.float32)
+    contribs[:, :-1] = shap_vals
+    contribs[:, -1] = base_value
 
     # Save SHAP values to parquet
     shap_save_path = f'{S3_BUCKET}/cjense/data/testmodel/shap_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}.parquet'
@@ -214,10 +234,8 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     ##### Beeswarm plot #####
     shap.plots.beeswarm(shap_vals_combined[:, non_seasonal_vars], show=False, max_display=len(FEATURE_COLS))
     beeswarm_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}.png'
-    # Save figure to .figures/ to upload to GitHub
     plt.savefig('./figures/beeswarm.png', dpi=300)
     plt.savefig(beeswarm_path, dpi=300, bbox_inches='tight')
-    # Save figure to S3
     fs.put(beeswarm_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}.png')
     plt.clf()
 
@@ -228,7 +246,6 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     ax.set_aspect("auto")
     ax.figure.set_size_inches(15, 5)
 
-    # Label the x-axis with the year instead of a raw instance index
     year_change = combined_time.dt.year.ne(combined_time.dt.year.shift(1))
     tick_pos = np.flatnonzero(year_change.to_numpy())
     tick_labels = combined_time.dt.year.iloc[tick_pos].astype(str)
@@ -236,15 +253,12 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     ax.set_xticklabels(tick_labels, rotation=0)
     ax.set_xlabel("Year")
 
-    # Mark where train data ends and test data begins
     split_idx = np.searchsorted(combined_time.values, np.datetime64(TRAIN_CUTOFF))
     ax.axvline(split_idx - 0.5, color="black", linestyle="--", linewidth=1)
 
     heatmap_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}.png'
-    # Save figure to .figures/ to upload to GitHub
     plt.savefig('./figures/heatmap.png', dpi=300)
     plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
-    # Save figure to S3
     fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}.png')
 
     return shap_vals_combined
