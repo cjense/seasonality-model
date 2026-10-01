@@ -80,6 +80,7 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 30) -> pd.DataFra
         "airtemp", "masked_mel_velocity", "melange_area_km2", 
         "ocean_EN4_TFc", "area_km2", "area_change_km2",
         # Space
+        "discharge",
     ]
 
     for feature in non_seasonal_vars:
