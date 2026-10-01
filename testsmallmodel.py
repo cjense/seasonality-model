@@ -188,7 +188,7 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     shap_vals_combined = explainer(combined_features)
 
     # Save SHAP values to dataframe and CSV
-    csv_save_path = f'/{S3_BUCKET}/cjense/data/testmodel/shap_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}.csv'
+    csv_save_path = f'{S3_BUCKET}/cjense/data/testmodel/shap_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}.csv'
     df_shap = pd.DataFrame(shap_vals_combined.values, columns=FEATURE_COLS)
     df_shap.to_csv(csv_save_path, index=False)
     
@@ -201,7 +201,7 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     plt.savefig('./figures/beeswarm.png', dpi=300)
     plt.savefig(beeswarm_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
-    fs.put(beeswarm_path, f'/{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}.png')
+    fs.put(beeswarm_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}.png')
     plt.clf()
 
     ##### Heatmap plot #####
@@ -228,7 +228,7 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     plt.savefig('./figures/heatmap.png', dpi=300)
     plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
-    fs.put(heatmap_path, f'/{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}.png')
+    fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}.png')
     
     return shap_vals_combined
 
@@ -244,7 +244,7 @@ def geoshapley_explainer(model: xgb.Booster, train: pd.DataFrame):
     # geoshapleyvals.summary_plot()
     
     # Save SHAP values to dataframe and CSV
-    csv_save_path = f'/{S3_BUCKET}/cjense/data/testmodel/geoshapley_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}.csv'
+    csv_save_path = f'{S3_BUCKET}/cjense/data/testmodel/geoshapley_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}.csv'
     df_shap = pd.DataFrame(geoshapleyvals.values, columns=FEATURE_COLS)
     df_shap.to_csv(csv_save_path, index=False)
     
