@@ -43,7 +43,7 @@ FEATURE_COLS = [
     # Spatial vars
     "meltwater", #"ice_velocity",                                    # TODO: Add ice_elevation, distance_to_terminus
     # Non-spatial vars (broadcast)
-    "airtemp", "masked_mel_velocity", "melange_area_km", 
+    "airtemp", "masked_mel_velocity", "melange_area_km2", 
     "ocean_EN4_TFc", "area_km2", "area_change_km2",                 # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     # Lag features
     "lag_1step", "lag_30d", "lag_60d", "lag_90d",
@@ -188,11 +188,12 @@ def main():
         # Spatial vars
         "meltwater", #"ice_velocity",
         # Non-spatial vars
-        "airtemp", "masked_mel_velocity", "melange_area_km", 
+        "airtemp", "masked_mel_velocity", "melange_area_km2", 
         "ocean_EN4_TFc", "area_km2", "area_change_km2",
         # Space
         "x", "y",
     ]
+    print("reading parquet")
     # df = pd.read_parquet('s3://gaia/cjense/data/testmodel/monthlymean_testdata.parquet', storage_options=storage_options)
     df = pd.read_parquet('s3://gaia/cjense/data/testmodel/flat_30D2_novelocity.parquet', storage_options=storage_options)
     # ns = pd.read_parquet(
