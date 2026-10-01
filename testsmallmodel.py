@@ -46,10 +46,11 @@ FEATURE_COLS = [
     "airtemp", "masked_mel_velocity", "melange_area_km2", 
     "ocean_EN4_TFc", "area_km2", "area_change_km2",                 # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     # Lag features
-    "lag_1step", "lag_30d", "lag_60d", "lag_90d",
-    "roll_30d_mean", "roll_30d_std",
+    # "lag_1step", "lag_30d", "lag_60d", "lag_90d",
+    # "roll_30d_mean", "roll_30d_std",
     # Time (encoded features only — raw datetime kept separate)
-    "season_sin", "season_cos", "year_norm", "time_days",
+    "season_sin", "season_cos",
+    #"year_norm", "time_days",
     # Space
     "x", "y",
 ]
@@ -284,10 +285,10 @@ def main():
         shap_df = pd.DataFrame(shap_vals_combined.values, columns=train.columns)
 
         # Save to a CSV file
-        shap_df.to_csv('./shap_values.csv', index=False)
+        shap_df.to_csv(f'./shap_values{RESOLUTION}_seed{RANDOM_SEED}.csv', index=False)
     except:
         print("saving shap vals to pickle")
-        with open('./shap_values.pkl', 'wb') as f:
+        with open(f'./shap_values{RESOLUTION}_seed{RANDOM_SEED}.pkl', 'wb') as f:
             pickle.dump(shap_vals_combined, f)
 
     times_combined = combined["time"]
