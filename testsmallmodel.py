@@ -274,7 +274,7 @@ def main():
     shap_vals = explainer(test[FEATURE_COLS])
 
     # Beeswarm plot
-    shap.plots.beeswarm(shap_vals[:, non_seasonal_vars], show=False, max_display=len(FEATURE_COLS))
+    shap.plots.beeswarm(shap_vals[:, FEATURE_COLS], show=False, max_display=len(FEATURE_COLS))
     plt.savefig('./figures/beeswarm.png', dpi=300, bbox_inches='tight')
     plt.clf()
 
@@ -295,7 +295,7 @@ def main():
     times_combined = combined["time"]
     instance_order = np.arange(len(times_combined))
 
-    ax = shap.plots.heatmap(shap_vals_combined[:, non_seasonal_vars], instance_order=instance_order, show=False)
+    ax = shap.plots.heatmap(shap_vals_combined[:, FEATURE_COLS], instance_order=instance_order, show=False)
     ax.set_aspect("auto")
     ax.figure.set_size_inches(15, 5)
 
