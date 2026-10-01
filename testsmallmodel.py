@@ -205,6 +205,7 @@ def main():
     df["time"] = pd.to_datetime(df["time"])
 
     df = df.merge(ns, on="time", how="outer")
+    df = df.drop(columns=["index_x", "index_y"])
 
     print("Merged spatial and non-spatial dataframes.")
     # print(df.head())
