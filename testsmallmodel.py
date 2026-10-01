@@ -182,6 +182,26 @@ def evaluate(model: xgb.Booster, test_df: pd.DataFrame):
     return {"rmse": rmse, "mae": mae, "r2": r2, "feature_importance": importance}
 
 
+def plot_predictions(model: xgb.Booster, train_df: pd.DataFrame, test_df: pd.DataFrame):
+    """Time series of truth vs. predictions over both the train and test periods."""
+    fig, ax = plt.subplots(figsize=(12, 4))
+    for df, label, color in [(train_df, "train", "tab:blue"), (test_df, "test", "tab:orange")]:
+        df = df.sort_values("time")
+        preds = model.predict(xgb.DMatrix(df[FEATURE_COLS]))
+        ax.plot(df["time"], df[TARGET_COL], color="black", linewidth=1,
+                label="truth" if label == "train" else None)
+        ax.plot(df["time"], preds, color=color, linewidth=1, linestyle="--",
+                label=f"prediction ({label})")
+
+    # mark where train data ends and test data begins
+    ax.axvline(pd.Timestamp(TRAIN_CUTOFF), color="gray", linestyle=":", linewidth=1)
+    ax.set_xlabel("Time")
+    ax.set_ylabel(TARGET_COL)
+    ax.legend()
+    fig.savefig('./figures/xgboost_result.png', dpi=300, bbox_inches='tight')
+    plt.close(fig)
+
+
 def main():
     
     non_seasonal_vars = [
@@ -238,6 +258,7 @@ def main():
     model = train_model(train, test)
     
     metrics = evaluate(model, test)
+    plot_predictions(model, train, test)
     
     model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/models/{GLACIER_NAME}_xgb_{RESOLUTION}2_novelocity.json"
     model.save_model(model_path)
