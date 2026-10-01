@@ -200,7 +200,7 @@ def main():
     #     f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
     #     storage_options=storage_options
     # )
-    df = df.reset_index()
+    # df = df.reset_index()
     # ns = ns.reset_index()
     # ns["time"] = pd.to_datetime(ns["time"]).dt.normalize()
     df["time"] = pd.to_datetime(df["time"])
