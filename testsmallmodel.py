@@ -47,7 +47,7 @@ FEATURE_COLS = [
     "ocean_EN4_TFc", "area_km2", "area_change_km2",                 # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     # Lag features
     "lag_1step", #"lag_30d", 
-    "lag_60d", "lag_90d",
+    # "lag_60d", "lag_90d",
     # "roll_30d_mean", "roll_30d_std",
     # Time (encoded features only — raw datetime kept separate)
     "season_sin", "season_cos",
