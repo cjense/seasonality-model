@@ -245,7 +245,7 @@ def main():
     df.to_parquet(cache_path, storage_options=storage_options, index=False)
     print("Cached.")
     
-    df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}2_novelocity.parquet", storage_options=storage_options)
+    df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}2.parquet", storage_options=storage_options)
     
     df = df.dropna(subset=['discharge'])
     
@@ -260,9 +260,9 @@ def main():
     metrics = evaluate(model, test)
     plot_predictions(model, train, test)
     
-    model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/models/{GLACIER_NAME}_xgb_{RESOLUTION}2_novelocity.json"
+    model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/models/{GLACIER_NAME}_xgb_{RESOLUTION}2.json"
     model.save_model(model_path)
-    fs.put(model_path, f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}2_novelocity.json")
+    fs.put(model_path, f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}2.json")
     print(f"\nModel saved to S3.")
     
     # feature_cols = model.get_booster().feature_names
