@@ -239,7 +239,7 @@ def main():
     
     metrics = evaluate(model, test)
     
-    model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/models/{GLACIER_NAME}_xgb_{RESOLUTION}2_novelocity.json"
+    model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/models/{GLACIER_NAME}_xgb_{RESOLUTION}2_novelocity.json"
     model.save_model(model_path)
     fs.put(model_path, f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}2_novelocity.json")
     print(f"\nModel saved to S3.")
