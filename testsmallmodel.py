@@ -11,7 +11,7 @@ from geoshapley import GeoShapleyTreeExplainer
 ########## CONFIG ##########
 GLACIER_NAME  = "zach"
 S3_BUCKET     = "s3://gaia"
-RESOLUTION    = "1D"
+RESOLUTION    = "30D"
 TRAIN_CUTOFF  = "2022-01-01"          # everything before this is train
 TEST_START    = "2022-01-01"          # everything from here is test
 CACHE_PARQUET = True                  # write flat df to S3 after extraction
@@ -20,9 +20,10 @@ SPLIT_SEED    = 123                   # random seed to split train and test data
 
 FEATURE_COLS = [
     # Spatial vars
-    "meltwater", "ice_velocity",                                            # TODO: Add ice_elevation, distance_to_terminus
+    "meltwater", #"ice_velocity",                                    # TODO: Add ice_elevation, distance_to_terminus
     # Non-spatial vars (broadcast)
-    "airtemp", "masked_mel_velocity", "melange_area_km", "ocean_EN4_TFc",   # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
+    "airtemp", "masked_mel_velocity", "melange_area_km", 
+    "ocean_EN4_TFc", "area_km2", "area_change_km2",                 # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     # Lag features
     "lag_1step", "lag_30d", "lag_60d", "lag_90d",
     "roll_30d_mean", "roll_30d_std",
@@ -34,9 +35,10 @@ FEATURE_COLS = [
 
 NON_SEASONAL_VARS = [
     # Spatial vars
-    "meltwater", "ice_velocity",
+    "meltwater", #"ice_velocity",
     # Non-spatial vars
-    "airtemp", "masked_mel_velocity", "melange_area_km", "ocean_EN4_TFc",
+    "airtemp", "masked_mel_velocity", "melange_area_km", 
+    "ocean_EN4_TFc", "area_km2", "area_change_km2",
     # Space
     "x", "y",
 ]
@@ -361,9 +363,9 @@ def main():
     
     # Calculate GeoShapley values
     print("Calculating GeoShapley values...")
-    geoshapleyvals = geoshapley_explainer(model, X_train)
+    # geoshapleyvals = geoshapley_explainer(model, X_train)
     
-    return model, metrics, shapvals, geoshapleyvals
+    return model, metrics, shapvals
 
 if __name__ == "__main__":
-    model, metrics, shapvals, geoshapleyvals = main()
+    model, metrics, shapvals = main()
