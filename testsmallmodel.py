@@ -8,13 +8,14 @@ import os
 import shap
 import matplotlib.pyplot as plt
 from geoshapley import GeoShapleyTreeExplainer
+import pickle
 
 # ─────────────────────────────────────────────
 # CONFIG — edit these
 # ─────────────────────────────────────────────
 GLACIER_NAME  = "zach"           # change to glacier_B for second run
 S3_BUCKET     = "s3://gaia"
-RESOLUTION    = "1D"                  # "6D" or "1D" — start with 6D
+RESOLUTION    = "30D"                  # "6D" or "1D" — start with 6D
 TRAIN_CUTOFF  = "2022-01-01"          # everything before this is train
 TEST_START    = "2022-01-01"          # everything from here is test
 # CACHE_PARQUET = True                  # write flat df to S3 after extraction
@@ -40,14 +41,14 @@ storage_options = {
 
 FEATURE_COLS = [
     # Spatial vars
-    # "ice_elevation",
-    "meltwater", "ice_velocity",
+    "meltwater", #"ice_velocity",                                    # TODO: Add ice_elevation, distance_to_terminus
     # Non-spatial vars (broadcast)
-    "airtemp", "masked_mel_velocity", "melange_area_km", "ocean_EN4_TFc",
+    "airtemp", "masked_mel_velocity", "melange_area_km", 
+    "ocean_EN4_TFc", "area_km2", "area_change_km2",                 # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     # Lag features
     "lag_1step", "lag_30d", "lag_60d", "lag_90d",
     "roll_30d_mean", "roll_30d_std",
-    # Time
+    # Time (encoded features only — raw datetime kept separate)
     "season_sin", "season_cos", "year_norm", "time_days",
     # Space
     "x", "y",
@@ -185,15 +186,15 @@ def main():
     
     non_seasonal_vars = [
         # Spatial vars
-        # "ice_elevation",
-        "meltwater", "ice_velocity",
-        # Non-spatial vars (broadcast)
-        "airtemp", "masked_mel_velocity", "melange_area_km", "ocean_EN4_TFc",
+        "meltwater", #"ice_velocity",
+        # Non-spatial vars
+        "airtemp", "masked_mel_velocity", "melange_area_km", 
+        "ocean_EN4_TFc", "area_km2", "area_change_km2",
         # Space
         "x", "y",
     ]
     # df = pd.read_parquet('s3://gaia/cjense/data/testmodel/monthlymean_testdata.parquet', storage_options=storage_options)
-    df = pd.read_parquet('s3://gaia/cjense/data/testmodel/flat_6D.parquet', storage_options=storage_options)
+    df = pd.read_parquet('s3://gaia/cjense/data/testmodel/flat_30D.parquet', storage_options=storage_options)
     ns = pd.read_parquet(
         f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
         storage_options=storage_options
@@ -214,12 +215,12 @@ def main():
     # df = optimize_dtypes(df)
     # print("Datatypes optimized")
 
-    cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet"
+    cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}2_novelocity.parquet"
     print(f"Writing flat parquet to {cache_path} ...")
     df.to_parquet(cache_path, storage_options=storage_options, index=False)
     print("Cached.")
     
-    df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet", storage_options=storage_options)
+    df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}2_novelocity.parquet", storage_options=storage_options)
     
     df = df.dropna(subset=['discharge'])
     
@@ -236,10 +237,10 @@ def main():
     
     metrics = evaluate(model, test)
     
-    model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/models/{GLACIER_NAME}_xgb_{RESOLUTION}.json"
+    model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/models/{GLACIER_NAME}_xgb_{RESOLUTION}2_novelocity.json"
     model.save_model(model_path)
-    # fs.put(model_path, f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}.json")
-    # print(f"\nModel saved to S3.")
+    fs.put(model_path, f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}2_novelocity.json")
+    print(f"\nModel saved to S3.")
     
     # feature_cols = model.get_booster().feature_names
     
@@ -255,6 +256,16 @@ def main():
     # Heatmap plot
     combined = pd.concat([train, test], ignore_index=True).sort_values("time").reset_index(drop=True)
     shap_vals_combined = explainer(combined[FEATURE_COLS])
+    try:
+        print("saving shap vals to csv")
+        shap_df = pd.DataFrame(shap_vals_combined.values, columns=train.columns)
+
+        # Save to a CSV file
+        shap_df.to_csv('./shap_values.csv', index=False)
+    except:
+        print("saving shap vals to pickle")
+        with open('./shap_values.pkl', 'wb') as f:
+            pickle.dump(shap_vals_combined, f)
 
     times_combined = combined["time"]
     instance_order = np.arange(len(times_combined))
