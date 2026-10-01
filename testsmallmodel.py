@@ -215,24 +215,25 @@ def main():
     ]
     print("reading parquet")
     # df = pd.read_parquet('s3://gaia/cjense/data/testmodel/monthlymean_testdata.parquet', storage_options=storage_options)
-    df = pd.read_parquet('s3://gaia/cjense/data/testmodel/flat_30D2_novelocity.parquet', storage_options=storage_options)
-    # ns = pd.read_parquet(
-    #     f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
-    #     storage_options=storage_options
-    # )
-    # df = df.reset_index()
-    # ns = ns.reset_index()
-    # ns["time"] = pd.to_datetime(ns["time"]).dt.normalize()
+    df = pd.read_parquet('s3://gaia/cjense/data/testmodel/flat_30D2.parquet', storage_options=storage_options)
+    ns = pd.read_parquet(
+        f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
+        storage_options=storage_options
+    )
+    df = df.reset_index()
+    ns = ns.reset_index()
+    ns["time"] = pd.to_datetime(ns["time"]).dt.normalize()
     df["time"] = pd.to_datetime(df["time"])
 
-    # df = df.drop(columns=["index"])
-    # ns = ns.drop(columns=["index"])
+    df = df.drop(columns=["index"])
+    ns = ns.drop(columns=["index"])
 
-    # df = df.merge(ns, on="time", how="outer")
-    # df = df.drop(columns=["index_x", "index_y"])
+    df = df.merge(ns, on="time", how="outer")
+    df = df.drop(columns=["index_x", "index_y"])
 
-    # print("Merged spatial and non-spatial dataframes.")
-    # print(df.head())
+    print("Merged spatial and non-spatial dataframes.")
+    print(df.head())
+    print(df.keys())
 
     df = df.resample("ME", on='time').mean().reset_index()
     resolution_days = int(RESOLUTION.replace("D", ""))
@@ -240,7 +241,7 @@ def main():
     # df = optimize_dtypes(df)
     # print("Datatypes optimized")
 
-    cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}2_novelocity.parquet"
+    cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}2.parquet"
     print(f"Writing flat parquet to {cache_path} ...")
     df.to_parquet(cache_path, storage_options=storage_options, index=False)
     print("Cached.")
@@ -260,9 +261,9 @@ def main():
     metrics = evaluate(model, test)
     plot_predictions(model, train, test)
     
-    model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/models/{GLACIER_NAME}_xgb_{RESOLUTION}2.json"
+    model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/models/{GLACIER_NAME}_xgb_{RESOLUTION}2_novelocity.json"
     model.save_model(model_path)
-    fs.put(model_path, f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}2.json")
+    fs.put(model_path, f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}2_novelocity.json")
     print(f"\nModel saved to S3.")
     
     # feature_cols = model.get_booster().feature_names
