@@ -203,6 +203,9 @@ def main():
     ns = ns.reset_index()
     ns["time"] = pd.to_datetime(ns["time"]).dt.normalize()
     df["time"] = pd.to_datetime(df["time"])
+    
+    df = df.drop(columns=["index"])
+    ns = ns.drop(columns=["index"])
 
     df = df.merge(ns, on="time", how="outer")
     df = df.drop(columns=["index_x", "index_y"])
