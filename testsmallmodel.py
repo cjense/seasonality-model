@@ -112,6 +112,7 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 30) -> pd.DataFra
     # Integer time (days since 2000-01-01) — useful as raw feature too
     df["time_days"] = (t - pd.Timestamp("2000-01-01")).dt.days.astype("int16")
 
+    print(df.keys())
     return df
 
 def optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
