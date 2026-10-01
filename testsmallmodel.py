@@ -51,7 +51,7 @@ FEATURE_COLS = [
     # "roll_30d_mean", "roll_30d_std",
     # Time (encoded features only — raw datetime kept separate)
     "season_sin", "season_cos",
-    "year_norm", "time_days",
+    # "year_norm", "time_days",
     # Space
     "x", "y",
 ]
@@ -72,21 +72,31 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 30) -> pd.DataFra
     steps_30d  = max(1, round(30  / resolution_days))
     steps_60d  = max(1, round(60  / resolution_days))
     steps_90d  = max(1, round(90  / resolution_days))
+    
+    non_seasonal_vars = [
+        # Spatial vars
+        "meltwater", #"ice_velocity",
+        # Non-spatial vars
+        "airtemp", "masked_mel_velocity", "melange_area_km2", 
+        "ocean_EN4_TFc", "area_km2", "area_change_km2",
+        # Space
+    ]
 
-    df["lag_1step"] = px["discharge"].shift(1)          # 1 timestep ago
-    df["lag_30d"]   = px["discharge"].shift(steps_30d)
-    df["lag_60d"]   = px["discharge"].shift(steps_60d)
-    df["lag_90d"]   = px["discharge"].shift(steps_90d)
+    for feature in non_seasonal_vars:
+        df["lag_1step_"+feature] = px[feature].shift(1)
+        df["lag_30d_"+feature]   = px[feature].shift(steps_30d)
+        df["lag_60d_"+feature]   = px[feature].shift(steps_60d)
+        df["lag_90d_"+feature]   = px[feature].shift(steps_90d)
 
-    # Rolling mean over past ~30 days (excludes current timestep via shift first)
-    df["roll_30d_mean"] = (
-        px["discharge"]
-        .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).mean())
-    )
-    df["roll_30d_std"] = (
-        px["discharge"]
-        .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).std())
-    )
+        # Rolling mean over past ~30 days (excludes current timestep via shift first)
+        df["roll_30d_mean_"+feature] = (
+            px[feature]
+            .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).mean())
+        )
+        df["roll_30d_std_"+feature] = (
+            px[feature]
+            .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).std())
+        )
 
     # ── Time features ──
     t = pd.to_datetime(df["time"])
