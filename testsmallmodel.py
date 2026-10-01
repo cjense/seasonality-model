@@ -55,7 +55,7 @@ FEATURE_COLS = [
 ]
 TARGET_COL = "discharge"
 
-def engineer_features(df: pd.DataFrame, resolution_days: int = 6) -> pd.DataFrame:
+def engineer_features(df: pd.DataFrame, resolution_days: int = 30) -> pd.DataFrame:
     """
     Add lag, rolling, and time-encoding features.
     All lags are in timesteps, not days — adjust shift() values if changing resolution.
@@ -195,22 +195,22 @@ def main():
     ]
     # df = pd.read_parquet('s3://gaia/cjense/data/testmodel/monthlymean_testdata.parquet', storage_options=storage_options)
     df = pd.read_parquet('s3://gaia/cjense/data/testmodel/flat_30D2_novelocity.parquet', storage_options=storage_options)
-    ns = pd.read_parquet(
-        f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
-        storage_options=storage_options
-    )
+    # ns = pd.read_parquet(
+    #     f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
+    #     storage_options=storage_options
+    # )
     df = df.reset_index()
-    ns = ns.reset_index()
-    ns["time"] = pd.to_datetime(ns["time"]).dt.normalize()
+    # ns = ns.reset_index()
+    # ns["time"] = pd.to_datetime(ns["time"]).dt.normalize()
     df["time"] = pd.to_datetime(df["time"])
-    
-    df = df.drop(columns=["index"])
-    ns = ns.drop(columns=["index"])
 
-    df = df.merge(ns, on="time", how="outer")
-    df = df.drop(columns=["index_x", "index_y"])
+    # df = df.drop(columns=["index"])
+    # ns = ns.drop(columns=["index"])
 
-    print("Merged spatial and non-spatial dataframes.")
+    # df = df.merge(ns, on="time", how="outer")
+    # df = df.drop(columns=["index_x", "index_y"])
+
+    # print("Merged spatial and non-spatial dataframes.")
     # print(df.head())
 
     df = df.resample("ME", on='time').mean().reset_index()
@@ -227,9 +227,6 @@ def main():
     df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}2_novelocity.parquet", storage_options=storage_options)
     
     df = df.dropna(subset=['discharge'])
-    
-    df = df.dropna(subset=['x'])
-    df = df.dropna(subset=['y'])
     
     train = df[df["time"] <  TRAIN_CUTOFF].copy()
     test  = df[df["time"] >= TEST_START].copy()
