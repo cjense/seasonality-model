@@ -86,7 +86,7 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 30) -> pd.DataFra
         # Spatial vars
         "meltwater", #"ice_velocity",
         # Non-spatial vars
-        "airtemp", "masked_mel_velocity", "melange_area_km2", 
+        "airtemp", "masked_mel_velocity", "melange_area_km", 
         "ocean_EN4_TFc", "area_km2", "area_change_km2",
         # Space
         "discharge",
