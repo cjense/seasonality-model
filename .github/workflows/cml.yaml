@@ -3,7 +3,9 @@ name: Model Training & SHAP Analysis
 on: [push, pull_request]
 
 jobs:
+  # TODO: change 
   train-and-evaluate:
+    # TODO: maybe rename these things
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
 
     env:
@@ -12,6 +14,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: TODO to Issue
+        uses: alstr/todo-to-issue-action@v5.1.15
 
       - name: Verify GPU access
         run: |
