@@ -8,13 +8,14 @@ import os
 import shap
 import matplotlib.pyplot as plt
 from geoshapley import GeoShapleyTreeExplainer
+import pickle
 
 # ─────────────────────────────────────────────
 # CONFIG — edit these
 # ─────────────────────────────────────────────
 GLACIER_NAME  = "zach"           # change to glacier_B for second run
 S3_BUCKET     = "s3://gaia"
-RESOLUTION    = "1D"                  # "6D" or "1D" — start with 6D
+RESOLUTION    = "30D"                  # "6D" or "1D" — start with 6D
 TRAIN_CUTOFF  = "2022-01-01"          # everything before this is train
 TEST_START    = "2022-01-01"          # everything from here is test
 # CACHE_PARQUET = True                  # write flat df to S3 after extraction
@@ -40,21 +41,23 @@ storage_options = {
 
 FEATURE_COLS = [
     # Spatial vars
-    # "ice_elevation",
-    "meltwater", "ice_velocity",
+    "meltwater", #"ice_velocity",                                    # TODO: Add ice_elevation, distance_to_terminus
     # Non-spatial vars (broadcast)
-    "airtemp", "masked_mel_velocity", "melange_area_km", "ocean_EN4_TFc",
+    "airtemp", "masked_mel_velocity", "melange_area_km2", 
+    "ocean_EN4_TFc", "area_km2", "area_change_km2",                 # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     # Lag features
-    "lag_1step", "lag_30d", "lag_60d", "lag_90d",
-    "roll_30d_mean", "roll_30d_std",
-    # Time
-    "season_sin", "season_cos", "year_norm", "time_days",
+    # "lag_1step", #"lag_30d", 
+    # "lag_60d", "lag_90d",
+    # "roll_30d_mean", "roll_30d_std",
+    # Time (encoded features only — raw datetime kept separate)
+    "season_sin", "season_cos",
+    # "year_norm", "time_days",
     # Space
     "x", "y",
 ]
 TARGET_COL = "discharge"
 
-def engineer_features(df: pd.DataFrame, resolution_days: int = 6) -> pd.DataFrame:
+def engineer_features(df: pd.DataFrame, resolution_days: int = 30) -> pd.DataFrame:
     """
     Add lag, rolling, and time-encoding features.
     All lags are in timesteps, not days — adjust shift() values if changing resolution.
@@ -69,21 +72,32 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 6) -> pd.DataFram
     steps_30d  = max(1, round(30  / resolution_days))
     steps_60d  = max(1, round(60  / resolution_days))
     steps_90d  = max(1, round(90  / resolution_days))
+    
+    non_seasonal_vars = [
+        # Spatial vars
+        "meltwater", #"ice_velocity",
+        # Non-spatial vars
+        "airtemp", "masked_mel_velocity", "melange_area_km2", 
+        "ocean_EN4_TFc", "area_km2", "area_change_km2",
+        # Space
+        "discharge",
+    ]
 
-    df["lag_1step"] = px["discharge"].shift(1)          # 1 timestep ago
-    df["lag_30d"]   = px["discharge"].shift(steps_30d)
-    df["lag_60d"]   = px["discharge"].shift(steps_60d)
-    df["lag_90d"]   = px["discharge"].shift(steps_90d)
+    for feature in non_seasonal_vars:
+        df["lag_1step_"+feature] = px[feature].shift(1)
+        df["lag_30d_"+feature]   = px[feature].shift(steps_30d)
+        df["lag_60d_"+feature]   = px[feature].shift(steps_60d)
+        df["lag_90d_"+feature]   = px[feature].shift(steps_90d)
 
-    # Rolling mean over past ~30 days (excludes current timestep via shift first)
-    df["roll_30d_mean"] = (
-        px["discharge"]
-        .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).mean())
-    )
-    df["roll_30d_std"] = (
-        px["discharge"]
-        .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).std())
-    )
+        # Rolling mean over past ~30 days (excludes current timestep via shift first)
+        df["roll_30d_mean_"+feature] = (
+            px[feature]
+            .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).mean())
+        )
+        df["roll_30d_std_"+feature] = (
+            px[feature]
+            .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).std())
+        )
 
     # ── Time features ──
     t = pd.to_datetime(df["time"])
@@ -98,6 +112,7 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 6) -> pd.DataFram
     # Integer time (days since 2000-01-01) — useful as raw feature too
     df["time_days"] = (t - pd.Timestamp("2000-01-01")).dt.days.astype("int16")
 
+    print(df.keys())
     return df
 
 def optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
@@ -181,31 +196,56 @@ def evaluate(model: xgb.Booster, test_df: pd.DataFrame):
     return {"rmse": rmse, "mae": mae, "r2": r2, "feature_importance": importance}
 
 
+def plot_predictions(model: xgb.Booster, train_df: pd.DataFrame, test_df: pd.DataFrame):
+    """Time series of truth vs. predictions over both the train and test periods."""
+    fig, ax = plt.subplots(figsize=(12, 4))
+    for df, label, color in [(train_df, "train", "tab:blue"), (test_df, "test", "tab:orange")]:
+        df = df.sort_values("time")
+        preds = model.predict(xgb.DMatrix(df[FEATURE_COLS]))
+        ax.plot(df["time"], df[TARGET_COL], color="black", linewidth=1,
+                label="truth" if label == "train" else None)
+        ax.plot(df["time"], preds, color=color, linewidth=1, linestyle="--",
+                label=f"prediction ({label})")
+
+    # mark where train data ends and test data begins
+    ax.axvline(pd.Timestamp(TRAIN_CUTOFF), color="gray", linestyle=":", linewidth=1)
+    ax.set_xlabel("Time")
+    ax.set_ylabel(TARGET_COL)
+    ax.legend()
+    fig.savefig('./figures/xgboost_result.png', dpi=300, bbox_inches='tight')
+    plt.close(fig)
+
+
 def main():
     
     non_seasonal_vars = [
         # Spatial vars
-        # "ice_elevation",
-        "meltwater", "ice_velocity",
-        # Non-spatial vars (broadcast)
-        "airtemp", "masked_mel_velocity", "melange_area_km", "ocean_EN4_TFc",
+        "meltwater", #"ice_velocity",
+        # Non-spatial vars
+        "airtemp", "masked_mel_velocity", "melange_area_km2", 
+        "ocean_EN4_TFc", "area_km2", "area_change_km2",
         # Space
         "x", "y",
     ]
+    print("reading parquet")
     # df = pd.read_parquet('s3://gaia/cjense/data/testmodel/monthlymean_testdata.parquet', storage_options=storage_options)
-    df = pd.read_parquet('s3://gaia/cjense/data/testmodel/flat_6D.parquet', storage_options=storage_options)
-    ns = pd.read_parquet(
-        f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
-        storage_options=storage_options
-    )
-    df = df.reset_index()
-    ns = ns.reset_index()
-    ns["time"] = pd.to_datetime(ns["time"]).dt.normalize()
+    df = pd.read_parquet('s3://gaia/cjense/data/testmodel/flat_30D2_novelocity.parquet', storage_options=storage_options)
+    # ns = pd.read_parquet(
+    #     f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet",
+    #     storage_options=storage_options
+    # )
+    # df = df.reset_index()
+    # ns = ns.reset_index()
+    # ns["time"] = pd.to_datetime(ns["time"]).dt.normalize()
     df["time"] = pd.to_datetime(df["time"])
 
-    df = df.merge(ns, on="time", how="outer")
+    # df = df.drop(columns=["index"])
+    # ns = ns.drop(columns=["index"])
 
-    print("Merged spatial and non-spatial dataframes.")
+    # df = df.merge(ns, on="time", how="outer")
+    # df = df.drop(columns=["index_x", "index_y"])
+
+    # print("Merged spatial and non-spatial dataframes.")
     # print(df.head())
 
     df = df.resample("ME", on='time').mean().reset_index()
@@ -214,17 +254,14 @@ def main():
     # df = optimize_dtypes(df)
     # print("Datatypes optimized")
 
-    cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet"
+    cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}2_novelocity.parquet"
     print(f"Writing flat parquet to {cache_path} ...")
     df.to_parquet(cache_path, storage_options=storage_options, index=False)
     print("Cached.")
     
-    df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}.parquet", storage_options=storage_options)
+    df = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}2_novelocity.parquet", storage_options=storage_options)
     
     df = df.dropna(subset=['discharge'])
-    
-    df = df.dropna(subset=['x'])
-    df = df.dropna(subset=['y'])
     
     train = df[df["time"] <  TRAIN_CUTOFF].copy()
     test  = df[df["time"] >= TEST_START].copy()
@@ -235,11 +272,12 @@ def main():
     model = train_model(train, test)
     
     metrics = evaluate(model, test)
+    plot_predictions(model, train, test)
     
-    model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/models/{GLACIER_NAME}_xgb_{RESOLUTION}.json"
+    model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/models/{GLACIER_NAME}_xgb_{RESOLUTION}2_novelocity.json"
     model.save_model(model_path)
-    # fs.put(model_path, f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}.json")
-    # print(f"\nModel saved to S3.")
+    fs.put(model_path, f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}2_novelocity.json")
+    print(f"\nModel saved to S3.")
     
     # feature_cols = model.get_booster().feature_names
     
@@ -248,18 +286,28 @@ def main():
     shap_vals = explainer(test[FEATURE_COLS])
 
     # Beeswarm plot
-    shap.plots.beeswarm(shap_vals[:, non_seasonal_vars], show=False, max_display=len(FEATURE_COLS))
+    shap.plots.beeswarm(shap_vals[:, FEATURE_COLS], show=False, max_display=len(FEATURE_COLS))
     plt.savefig('./figures/beeswarm.png', dpi=300, bbox_inches='tight')
     plt.clf()
 
     # Heatmap plot
     combined = pd.concat([train, test], ignore_index=True).sort_values("time").reset_index(drop=True)
     shap_vals_combined = explainer(combined[FEATURE_COLS])
+    try:
+        print("saving shap vals to csv")
+        shap_df = pd.DataFrame(shap_vals_combined.values, columns=train.columns)
+
+        # Save to a CSV file
+        shap_df.to_csv(f'./shap_values{RESOLUTION}_seed{RANDOM_SEED}.csv', index=False)
+    except:
+        print("saving shap vals to pickle")
+        with open(f'./shap_values{RESOLUTION}_seed{RANDOM_SEED}.pkl', 'wb') as f:
+            pickle.dump(shap_vals_combined, f)
 
     times_combined = combined["time"]
     instance_order = np.arange(len(times_combined))
 
-    ax = shap.plots.heatmap(shap_vals_combined[:, non_seasonal_vars], instance_order=instance_order, show=False)
+    ax = shap.plots.heatmap(shap_vals_combined[:, FEATURE_COLS], instance_order=instance_order, show=False)
     ax.set_aspect("auto")
     ax.figure.set_size_inches(15, 5)
 

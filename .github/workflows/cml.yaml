@@ -30,6 +30,7 @@ jobs:
         run: |
           echo "## Model metrics" > report.md
           cat metrics.txt >> report.md
+          echo "![](./figures/xgboost_result.png)" >> report.md
           echo "![](./figures/beeswarm.png)" >> report.md
           echo "![](./figures/heatmap.png)" >> report.md
           cml comment create report.md
