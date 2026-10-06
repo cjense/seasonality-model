@@ -15,9 +15,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: TODO to Issue
-        uses: alstr/todo-to-issue-action@v5.1.15
-
       - name: Verify GPU access
         run: |
           echo "Checking GPU availability..."
