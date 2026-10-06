@@ -25,17 +25,18 @@ FEATURE_COLS = [
     "airtemp", "masked_mel_velocity", "melange_area_km", 
     "ocean_EN4_TFc", "area_km2", "area_change_km2",                 # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     # Lag features
-    "lag_1step", "lag_30d", "lag_60d", "lag_90d",
-    "roll_30d_mean", "roll_30d_std",
-    # Time (encoded features only — raw datetime kept separate)
-    "season_sin", "season_cos", "year_norm", "time_days",
+    "lag_1step", "lag_60d", "lag_90d",
+    # "roll_30d_mean", "roll_30d_std",
+    # Time encodings
+    "season_sin", "season_cos",
+    # "year_norm", "time_days",
     # Space
     "x", "y",
 ]
 
 NON_SEASONAL_VARS = [
     # Spatial vars
-    "meltwater", #"ice_velocity",
+    "meltwater", "ice_velocity",
     # Non-spatial vars
     "airtemp", "masked_mel_velocity", "melange_area_km", 
     "ocean_EN4_TFc", "area_km2", "area_change_km2",
@@ -64,7 +65,7 @@ storage_options = {
     },
 }
 
-def engineer_features(df: pd.DataFrame, resolution_days: int = 6) -> pd.DataFrame:
+def engineer_features(df: pd.DataFrame, resolution_days: int = 30) -> pd.DataFrame:
     """
     Add lag, rolling, and time-encoding features.
     All lags are in timesteps, not days — adjust shift() values if changing resolution.
@@ -79,21 +80,32 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 6) -> pd.DataFram
     steps_30d  = max(1, round(30  / resolution_days))
     steps_60d  = max(1, round(60  / resolution_days))
     steps_90d  = max(1, round(90  / resolution_days))
+    
+    non_seasonal_vars = [
+        # Spatial vars
+        "meltwater", #"ice_velocity",
+        # Non-spatial vars
+        "airtemp", "masked_mel_velocity", "melange_area_km2", 
+        "ocean_EN4_TFc", "area_km2", "area_change_km2",
+        # Space
+        "discharge",
+    ]
 
-    df["lag_1step"] = px["discharge"].shift(1)          # 1 timestep ago
-    df["lag_30d"]   = px["discharge"].shift(steps_30d)
-    df["lag_60d"]   = px["discharge"].shift(steps_60d)
-    df["lag_90d"]   = px["discharge"].shift(steps_90d)
+    for feature in non_seasonal_vars:
+        df["lag_1step_"+feature] = px[feature].shift(1)
+        df["lag_30d_"+feature]   = px[feature].shift(steps_30d)
+        df["lag_60d_"+feature]   = px[feature].shift(steps_60d)
+        df["lag_90d_"+feature]   = px[feature].shift(steps_90d)
 
-    # Rolling mean over past ~30 days (excludes current timestep via shift first)
-    df["roll_30d_mean"] = (
-        px["discharge"]
-        .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).mean())
-    )
-    df["roll_30d_std"] = (
-        px["discharge"]
-        .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).std())
-    )
+        # Rolling mean over past ~30 days (excludes current timestep via shift first)
+        df["roll_30d_mean_"+feature] = (
+            px[feature]
+            .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).mean())
+        )
+        df["roll_30d_std_"+feature] = (
+            px[feature]
+            .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).std())
+        )
 
     # ── Time features ──
     t = pd.to_datetime(df["time"])
@@ -159,9 +171,11 @@ def evaluate(model: xgb.Booster, dtest: xgb.DMatrix):
     # Write metrics to file for easy viewing
     with open("modelresults.md", 'a') as outfile:
         outfile.write("### Model Metrics\n")
-        outfile.write(f"RMSE : {rmse:.4f} m/day\n")
-        outfile.write(f"MAE  : {mae:.4f} m/day\n")
+        outfile.write(f"RMSE : {rmse:.4f} Gt/yr\n")
+        outfile.write(f"MAE  : {mae:.4f} Gt/yr\n")
         outfile.write(f"R²   : {r2:.4f}\n")
+        outfile.write(f"\n── Top 10 features by gain ───────")
+        outfile.write(importance.head(10).to_string())
 
     return {"rmse": rmse, "mae": mae, "r2": r2, "feature_importance": importance}
 
@@ -362,7 +376,8 @@ def main():
     shapvals = shap_explainer(model, X_train, X_test, time_train, time_test, NON_SEASONAL_VARS)
     
     # Calculate GeoShapley values
-    print("Calculating GeoShapley values...")
+    # TODO
+    # print("Calculating GeoShapley values...")
     # geoshapleyvals = geoshapley_explainer(model, X_train)
     
     return model, metrics, shapvals
