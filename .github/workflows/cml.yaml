@@ -4,6 +4,16 @@ on: [push, pull_request]
 
 jobs:
   # TODO: change 
+
+    - name: Create TODOs
+      if: github.event_name == 'push'
+      permissions:
+        issues: write
+      steps:
+        - uses: "actions/checkout@v6"
+        - name: "TODO to Issue"
+          uses: "alstr/todo-to-issue-action@v5"
+
   train-and-evaluate:
     # TODO: maybe rename these things
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
