@@ -3,16 +3,15 @@ name: Model Training & SHAP Analysis
 on: [push, pull_request]
 
 jobs:
-  # TODO: change 
   auto-todos:
-    - name: Create TODOs
-      if: github.event_name == 'push'
-      permissions:
-        issues: write
-      steps:
-        - uses: "actions/checkout@v6"
-        - name: "TODO to Issue"
-          uses: "alstr/todo-to-issue-action@v5"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      issues: write
+    steps:
+      - uses: "actions/checkout@v6"
+      - name: "TODO to Issue"
+        uses: "alstr/todo-to-issue-action@v5"
 
   train-and-evaluate:
     # TODO: maybe rename these things
