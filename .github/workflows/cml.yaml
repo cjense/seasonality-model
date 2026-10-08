@@ -8,13 +8,13 @@ jobs:
     if: github.event_name == 'push'
     permissions:
       issues: write
+      contents: read
     steps:
       - uses: "actions/checkout@v6"
-      - name: "Find TODOs and create issues"
-        uses: "jdleung/todo-to-issue-action@v1.2.0"
+      - name: "TODO to Issue"
+        uses: "alstr/todo-to-issue-action@v5"
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          labels: "todo"
+          CLOSE_ISSUES: "true"
 
   train-and-evaluate:
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
