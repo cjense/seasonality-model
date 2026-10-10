@@ -275,11 +275,11 @@ def main():
         print("Found cached file.")
 
         # Record data size and location
-        with open("modelresults.md", 'a') as outfile:
-            outfile.write("### Data\n")
-            outfile.write(f"Loaded from cache at {cache_path}.")
-            outfile.write(f"Loaded from cache: {len(df):,} rows, {df.memory_usage(deep=True).sum() / 1e9:.2f} GB\n")
-            df.head().to_markdown(buf=outfile)
+        # with open("modelresults.md", 'a') as outfile:
+        #     outfile.write("### Data\n")
+        #     outfile.write(f"Loaded from cache at {cache_path}.")
+        #     outfile.write(f"Loaded from cache: {len(df):,} rows, {df.memory_usage(deep=True).sum() / 1e9:.2f} GB\n")
+        #     df.head().to_markdown(buf=outfile)
 
     except Exception:
         print("Did not find cached file. Making new dataframe.")
@@ -307,10 +307,10 @@ def main():
         df.to_parquet(cache_path, storage_options=storage_options, index=False)
         
         # Record making cached file
-        with open("modelresults.md", 'a') as outfile:
-            outfile.write("### Data\n")
-            outfile.write(f"No cached file found. Made new file at {RESOLUTION} resolution and uploaded it to s3: {cache_path}.")
-            df.head().to_markdown(buf=outfile)
+        # with open("modelresults.md", 'a') as outfile:
+        #     outfile.write("### Data\n")
+        #     outfile.write(f"No cached file found. Made new file at {RESOLUTION} resolution and uploaded it to s3: {cache_path}.")
+        #     df.head().to_markdown(buf=outfile)
     
     # Drop NaNs from target feature
     # You can't predict NaN values!
