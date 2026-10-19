@@ -21,7 +21,12 @@ jobs:
           nvidia-smi
 
       - name: Train model
-        run: pixi run -e seasonality-model python testsmallmodel.py
+      - name: Train model
+        run: |
+          set -x
+          date
+          pixi run -e seasonality-model python testsmallmodel.py
+          date
 
       - name: Set up CML
         uses: iterative/setup-cml@v2
