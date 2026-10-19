@@ -21,7 +21,7 @@ jobs:
         run: |
           set -x
           date
-          pixi run -e seasonality-model python testsmallmodel.py
+          pixi run -e seasonality-model python -u testsmallmodel.py
           date
 
       - name: Set up CML
@@ -31,9 +31,8 @@ jobs:
         env:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "## Model metrics" > report.md
-          cat metrics.txt >> report.md
-          echo "![](./figures/xgboost_result.png)" >> report.md
-          echo "![](./figures/beeswarm.png)" >> report.md
-          echo "![](./figures/heatmap.png)" >> report.md
-          cml comment create report.md
+          echo "## Model metrics" > modelresults.md
+          echo "![](./figures/xgboost_result.png)" >> modelresults.md
+          echo "![](./figures/beeswarm.png)" >> modelresults.md
+          echo "![](./figures/heatmap.png)" >> modelresults.md
+          cml comment create modelresults.md
