@@ -59,7 +59,6 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     plt.tight_layout()
     beeswarm_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
-    plt.savefig('./figures/beeswarm.png', dpi=300, bbox_inches='tight')
     plt.savefig(beeswarm_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
     fs.put(beeswarm_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
@@ -96,7 +95,6 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
 
     heatmap_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
-    plt.savefig('./figures/heatmap.png', dpi=300, bbox_inches='tight')
     plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
     fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
