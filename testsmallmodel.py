@@ -17,6 +17,7 @@ TEST_START    = "2022-01-01"          # everything from here is test
 CACHE_PARQUET = True                  # write flat df to S3 after extraction
 MODEL_SEED    = 42                    # random seed to train model
 SPLIT_SEED    = 123                   # random seed to split train and test data
+BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
 SPECIAL_NAME  = "_no_vel"             # include a special signifier to the end of filenames
 NOTES         = "Run with encodings for all feature columns, 1 step, 60D and 90D discharge lags \
                 and season sin and cosine. Calculating SHAP values of all features using GPU"
@@ -220,7 +221,13 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     print(f"SHAP value parquet saved to S3: " + shap_save_path)
 
     ##### Beeswarm plot #####
-    shap.plots.beeswarm(shap_vals_combined[:, features], show=False, max_display=len(FEATURE_COLS))
+    # Plot a random subsample -- a matplotlib scatter of every row is extremely slow.
+    # The full SHAP values are still saved to parquet above and used for the heatmap below.
+    n_rows = len(shap_vals_combined.values)
+    rng = np.random.default_rng(MODEL_SEED)
+    plot_idx = np.sort(rng.choice(n_rows, size=min(n_rows, BEESWARM_MAX_POINTS), replace=False))
+    print(f"Plotting beeswarm with {len(plot_idx):,} of {n_rows:,} rows...")
+    shap.plots.beeswarm(shap_vals_combined[plot_idx][:, features], show=False, max_display=len(FEATURE_COLS))
     plt.title("SHAP values (path-dependent TreeSHAP, GPU)")
     beeswarm_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
