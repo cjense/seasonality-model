@@ -24,7 +24,7 @@ FEATURE_COLS = [
     *[f"{lag}_{var}" for var in ["meltwater", "airtemp", "masked_mel_velocity", "melange_area_km2",
                                  "ocean_EN4_TFc", "area_km2", "area_change_km2"]
       for lag in ("lag_1step", "lag_60d", "lag_90d")],      # no discharge lags (target)
-    "roll_30d_mean", "roll_30d_std",
+    # "roll_30d_mean", "roll_30d_std",
     # Time encodings
     "season_sin", "season_cos",
     # "year_norm", "time_days",
