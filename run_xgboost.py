@@ -1,12 +1,7 @@
 import numpy as np
 import pandas as pd
 import xgboost as xgb
-import s3fs
-import os
-import shap
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from geoshapley import GeoShapleyTreeExplainer
 
 from config import *
 
@@ -67,6 +62,25 @@ def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix):
 
     return {"rmse": rmse, "mae": mae, "r2": r2, "feature_importance": importance}
 
+def plot_predictions(model: xgb.Booster, train_df: pd.DataFrame, test_df: pd.DataFrame):
+    """Time series of truth vs. predictions over both the train and test periods."""
+    
+    fig, ax = plt.subplots(figsize=(12, 4))
+    for df, label, color in [(train_df, "train", "tab:blue"), (test_df, "test", "tab:orange")]:
+        # Many pixels per timestep, so average truth and predictions over space
+        df = (df.assign(pred=model.predict(xgb.DMatrix(df[FEATURE_COLS])))
+                .groupby("time")[[TARGET_COL, "pred"]].mean())
+        ax.plot(df.index, df[TARGET_COL], color="black", linewidth=1,
+                label="truth" if label == "train" else None)
+        ax.plot(df.index, df["pred"], color=color, linewidth=1, linestyle="--",
+                label=f"prediction ({label})")
+
+    ax.set_xlabel("Time")
+    ax.set_ylabel(TARGET_COL)
+    ax.legend()
+    fig.savefig('./figures/xgboost_result.png', dpi=300, bbox_inches='tight')
+    plt.close(fig)
+
 def main():
     # Load train and test sets written by preprocess.py
     train = pd.read_parquet(TRAIN_PATH, storage_options=storage_options)
@@ -81,6 +95,7 @@ def main():
 
     # Calculate model metrics
     metrics = evaluate(model, dtest)
+    plot_predictions(model, train, test)
 
     # Save the model to disk
     model.save_model(LOCAL_MODEL_PATH)
