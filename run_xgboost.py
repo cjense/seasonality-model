@@ -52,13 +52,13 @@ def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix):
     
     # Write metrics to file for easy viewing
     with open("modelresults.md", 'a') as outfile:
-        outfile.write(NOTES + "\n")
+        outfile.write(NOTES + "\n\n")
         outfile.write("### Model Metrics\n")
-        outfile.write(f"RMSE : {rmse:.4f} Gt/yr\n")
-        outfile.write(f"MAE  : {mae:.4f} Gt/yr\n")
-        outfile.write(f"R²   : {r2:.4f}\n")
-        outfile.write(f"\n── Top 10 features by gain ───────")
-        outfile.write(importance.head(10).to_string())
+        outfile.write(f"- RMSE : {rmse:.4f} Gt/yr\n")
+        outfile.write(f"- MAE  : {mae:.4f} Gt/yr\n")
+        outfile.write(f"- R²   : {r2:.4f}\n")
+        outfile.write(f"\n### Top 10 features by gain\n")
+        outfile.write(importance.head(10).to_markdown() + "\n\n")
 
     return {"rmse": rmse, "mae": mae, "r2": r2, "feature_importance": importance}
 

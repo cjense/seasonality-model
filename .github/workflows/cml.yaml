@@ -31,19 +31,19 @@ jobs:
           pixi run -e seasonality-model python -u run_xgboost.py
           date
 
-      - name: Calculate SHAP values
-        run: |
-          set -x
-          date
-          pixi run -e seasonality-model python -u run_shap.py
-          date
+      # - name: Calculate SHAP values
+      #   run: |
+      #     set -x
+      #     date
+      #     pixi run -e seasonality-model python -u run_shap.py
+      #     date
 
-      - name: Calculate GeoShapley values
-        run: |
-          set -x
-          date
-          pixi run -e seasonality-model python -u run_geoshapley.py
-          date
+      # - name: Calculate GeoShapley values
+      #   run: |
+      #     set -x
+      #     date
+      #     pixi run -e seasonality-model python -u run_geoshapley.py
+      #     date
 
       - name: Set up CML
         uses: iterative/setup-cml@v2
@@ -52,7 +52,7 @@ jobs:
         env:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "## Model metrics" > modelresults.md
+          echo "## Figures" >> modelresults.md
           echo "![](./figures/xgboost_result.png)" >> modelresults.md
           echo "![](./figures/beeswarm.png)" >> modelresults.md
           echo "![](./figures/heatmap.png)" >> modelresults.md

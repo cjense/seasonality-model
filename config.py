@@ -12,8 +12,8 @@ MODEL_SEED    = 42                    # random seed to train model
 SPLIT_SEED    = 123                   # random seed to split train and test data
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
 SPECIAL_NAME  = "_no_vel"             # include a special signifier to the end of filenames
-NOTES         = "Run with encodings for all feature columns, 1 step, 60D and 90D discharge lags \
-                and season sin and cosine. Calculating SHAP values of all features using GPU"
+NOTES         = ("Run with encodings for all feature columns, 1 step, 60D and 90D discharge lags "
+                 "and season sin and cosine. Calculating SHAP values of all features using GPU")
 
 FEATURE_COLS = [
     # Spatial vars

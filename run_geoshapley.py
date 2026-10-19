@@ -1,11 +1,5 @@
-import numpy as np
 import pandas as pd
 import xgboost as xgb
-import s3fs
-import os
-import shap
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
 from geoshapley import GeoShapleyTreeExplainer
 
 from config import *

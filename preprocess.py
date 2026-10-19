@@ -62,7 +62,9 @@ def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
     return df
 
 def main():
-    
+    # First step of the pipeline: start a fresh modelresults.md for this run
+    open("modelresults.md", "w").close()
+
     # Look for existing file of the correct resolution
     cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}{SPECIAL_NAME}.parquet"
     try:
@@ -73,9 +75,9 @@ def main():
         # Record data size and location
         with open("modelresults.md", 'a') as outfile:
             outfile.write("### Data\n")
-            outfile.write(f"Loaded from cache at {cache_path}.")
-            outfile.write(f"Loaded from cache: {len(df):,} rows, {df.memory_usage(deep=True).sum() / 1e9:.2f} GB\n")
+            outfile.write(f"Loaded from cache at {cache_path}: {len(df):,} rows, {df.memory_usage(deep=True).sum() / 1e9:.2f} GB\n\n")
             df.head().to_markdown(buf=outfile)
+            outfile.write("\n\n")
 
     except Exception:
         print("Did not find cached file. Making new dataframe.")
@@ -108,8 +110,9 @@ def main():
         # Record making cached file
         with open("modelresults.md", 'a') as outfile:
             outfile.write("### Data\n")
-            outfile.write(f"No cached file found. Made new file at {RESOLUTION} resolution and uploaded it to s3: {cache_path}.")
+            outfile.write(f"No cached file found. Made new file at {RESOLUTION} resolution and uploaded it to s3: {cache_path}.\n\n")
             df.head().to_markdown(buf=outfile)
+            outfile.write("\n\n")
     
     # Drop NaNs from target feature
     # You can't predict NaN values!
