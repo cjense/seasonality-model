@@ -50,7 +50,7 @@ NON_SEASONAL_VARS = [
     "x", "y",
 ]
 
-TARGET_COL = "discharge"
+TARGET_COL = "Discharge (Gt/yr)"
 
 ########## S3 Setup ##########
 fs = s3fs.S3FileSystem(
@@ -94,7 +94,7 @@ def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
         "airtemp", "masked_mel_velocity", "melange_area_km", 
         "ocean_EN4_TFc", "area_km2", "area_change_km2",
         # Space
-        "discharge",
+        "Discharge (Gt/yr)",
     ]
 
     for feature in non_seasonal_vars:
