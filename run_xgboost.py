@@ -83,6 +83,7 @@ def plot_predictions(model: xgb.Booster, train_df: pd.DataFrame, test_df: pd.Dat
     fig.savefig('./figures/xgboost_result.png', dpi=300, bbox_inches='tight')
     xgboost_fig_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_xgbresult_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
+    plt.savefig('./figures/xgboost_result.png', dpi=300, bbox_inches='tight')
     plt.savefig(xgboost_fig_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
     fs.put(xgboost_fig_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_xgbresult_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
