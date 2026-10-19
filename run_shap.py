@@ -53,8 +53,10 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     rng = np.random.default_rng(MODEL_SEED)
     plot_idx = np.sort(rng.choice(n_rows, size=min(n_rows, BEESWARM_MAX_POINTS), replace=False))
     print(f"Plotting beeswarm with {len(plot_idx):,} of {n_rows:,} rows...")
-    shap.plots.beeswarm(shap_vals_combined[plot_idx][:, features], show=False, max_display=len(FEATURE_COLS))
+    shap.plots.beeswarm(shap_vals_combined[plot_idx][:, features], show=False, max_display=len(FEATURE_COLS),
+                        plot_size=(14, 8))
     plt.title("SHAP values (path-dependent TreeSHAP, GPU)")
+    plt.tight_layout()
     beeswarm_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
     plt.savefig('./figures/beeswarm.png', dpi=300, bbox_inches='tight')

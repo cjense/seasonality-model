@@ -75,6 +75,8 @@ def plot_predictions(model: xgb.Booster, train_df: pd.DataFrame, test_df: pd.Dat
         ax.plot(df.index, df["pred"], color=color, linewidth=1, linestyle="--",
                 label=f"prediction ({label})")
 
+    # mark where train data ends and test data begins
+    ax.axvline(pd.Timestamp(TRAIN_CUTOFF), color="gray", linestyle=":", linewidth=1)
     ax.set_xlabel("Time")
     ax.set_ylabel(TARGET_COL)
     ax.legend()

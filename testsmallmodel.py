@@ -19,8 +19,8 @@ MODEL_SEED    = 42                    # random seed to train model
 SPLIT_SEED    = 123                   # random seed to split train and test data
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
 SPECIAL_NAME  = "_no_vel"             # include a special signifier to the end of filenames
-NOTES         = "Run with encodings for all feature columns, 1 step, 60D and 90D discharge lags \
-                and season sin and cosine. Calculating SHAP values of all features using GPU"
+NOTES         = "Run with encodings for all feature columns, no lags,  \
+                and with season sin and cosine. Calculating SHAP values of all features using GPU"
 
 FEATURE_COLS = [
     # Spatial vars
@@ -29,9 +29,9 @@ FEATURE_COLS = [
     "airtemp", "masked_mel_velocity", "melange_area_km2", 
     "ocean_EN4_TFc", "area_km2", "area_change_km2",                 # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     # Lag features
-    *[f"{lag}_{var}" for var in ["meltwater", "airtemp", "masked_mel_velocity", "melange_area_km2",
-                                 "ocean_EN4_TFc", "area_km2", "area_change_km2"]
-      for lag in ("lag_1step", "lag_60d", "lag_90d")],      # no discharge lags (target)
+    # *[f"{lag}_{var}" for var in ["meltwater", "airtemp", "masked_mel_velocity", "melange_area_km2",
+    #                              "ocean_EN4_TFc", "area_km2", "area_change_km2"]
+    #   for lag in ("lag_1step", "lag_60d", "lag_90d")],      # no discharge lags (target)
     # "roll_30d_mean", "roll_30d_std",
     # Time encodings
     "season_sin", "season_cos",

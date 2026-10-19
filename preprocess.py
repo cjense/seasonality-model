@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 
 from config import *
 
@@ -118,9 +117,12 @@ def main():
     # You can't predict NaN values!
     df = df.dropna(subset=[TARGET_COL])
 
-    # Split data into train and test set, keeping time alongside the features and target
-    # so downstream scripts don't need to split it separately
-    train, test = train_test_split(df[["time", *FEATURE_COLS, TARGET_COL]], test_size=0.2, random_state=SPLIT_SEED)
+    # Split data into train and test set by time, keeping time alongside the features and target
+    # so downstream scripts don't need to split it separately. A random split would leak: the
+    # target is the same for every pixel at a timestep, so test timesteps would also appear in train.
+    df = df[["time", *FEATURE_COLS, TARGET_COL]]
+    train = df[df["time"] < TRAIN_CUTOFF]
+    test  = df[df["time"] >= TEST_START]
 
     # Save train and test sets for run_xgboost.py and run_shap.py
     train.to_parquet(TRAIN_PATH, storage_options=storage_options, index=False)
