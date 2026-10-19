@@ -53,6 +53,5 @@ def main():
 
     # return model, geoshapleyvals
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     # model, geoshapleyvals = main()
-    continue
