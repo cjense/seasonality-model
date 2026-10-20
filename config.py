@@ -69,3 +69,5 @@ TEST_PATH  = f"{S3_BUCKET}/cjense/data/testmodel/test_{RESOLUTION}{SPECIAL_NAME}
 
 LOCAL_MODEL_PATH = f"/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/models/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.json"
 S3_MODEL_PATH    = f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.json"
+
+os.makedirs("./figures", exist_ok=True)

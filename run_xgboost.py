@@ -80,7 +80,6 @@ def plot_predictions(model: xgb.Booster, train_df: pd.DataFrame, test_df: pd.Dat
     ax.set_xlabel("Time")
     ax.set_ylabel(TARGET_COL)
     ax.legend()
-    fig.savefig('./figures/xgboost_result.png', dpi=300, bbox_inches='tight')
     xgboost_fig_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_xgbresult_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
     plt.savefig('./figures/xgboost_result.png', dpi=300, bbox_inches='tight')
