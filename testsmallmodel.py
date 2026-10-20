@@ -11,22 +11,27 @@ from geoshapley import GeoShapleyTreeExplainer
 ########## CONFIG ##########
 GLACIER_NAME  = "zach"
 S3_BUCKET     = "s3://gaia"
-RESOLUTION    = "30D"
+RESOLUTION    = "MS"                  # MS = monthly on the first of the month
 TRAIN_CUTOFF  = "2022-01-01"          # everything before this is train
 TEST_START    = "2022-01-01"          # everything from here is test
 CACHE_PARQUET = True                  # write flat df to S3 after extraction
 MODEL_SEED    = 42                    # random seed to train model
 SPLIT_SEED    = 123                   # random seed to split train and test data
-SPECIAL_NAME  = "2_novelocity"        # include a special signifier to the end of filenames
+BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
+SPECIAL_NAME  = "_no_vel"             # include a special signifier to the end of filenames
+NOTES         = "Run with encodings for all feature columns, no lags,  \
+                and with season sin and cosine. Calculating SHAP values of all features using GPU"
 
 FEATURE_COLS = [
     # Spatial vars
     "meltwater", #"ice_velocity",                                   # TODO: Add ice_elevation, distance_to_terminus
     # Non-spatial vars (broadcast)
-    "airtemp", "masked_mel_velocity", "melange_area_km", 
+    "airtemp", "masked_mel_velocity", "melange_area_km2", 
     "ocean_EN4_TFc", "area_km2", "area_change_km2",                 # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     # Lag features
-    "lag_1step", "lag_60d", "lag_90d",
+    # *[f"{lag}_{var}" for var in ["meltwater", "airtemp", "masked_mel_velocity", "melange_area_km2",
+    #                              "ocean_EN4_TFc", "area_km2", "area_change_km2"]
+    #   for lag in ("lag_1step", "lag_60d", "lag_90d")],      # no discharge lags (target)
     # "roll_30d_mean", "roll_30d_std",
     # Time encodings
     "season_sin", "season_cos",
@@ -37,15 +42,15 @@ FEATURE_COLS = [
 
 NON_SEASONAL_VARS = [
     # Spatial vars
-    "meltwater", "ice_velocity",
+    "meltwater", #"ice_velocity",
     # Non-spatial vars
-    "airtemp", "masked_mel_velocity", "melange_area_km", 
+    "airtemp", "masked_mel_velocity", "melange_area_km2",
     "ocean_EN4_TFc", "area_km2", "area_change_km2",
     # Space
     "x", "y",
 ]
 
-TARGET_COL = "discharge"
+TARGET_COL = "Discharge (Gt/yr)"
 
 ########## S3 Setup ##########
 fs = s3fs.S3FileSystem(
@@ -66,7 +71,7 @@ storage_options = {
     },
 }
 
-def engineer_features(df: pd.DataFrame, resolution_days: int = 30) -> pd.DataFrame:
+def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
     """
     Add lag, rolling, and time-encoding features.
     All lags are in timesteps, not days — adjust shift() values if changing resolution.
@@ -86,10 +91,10 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 30) -> pd.DataFra
         # Spatial vars
         "meltwater", #"ice_velocity",
         # Non-spatial vars
-        "airtemp", "masked_mel_velocity", "melange_area_km", 
+        "airtemp", "masked_mel_velocity", "melange_area_km2", 
         "ocean_EN4_TFc", "area_km2", "area_change_km2",
         # Space
-        "discharge",
+        "Discharge (Gt/yr)",
     ]
 
     for feature in non_seasonal_vars:
@@ -123,7 +128,7 @@ def engineer_features(df: pd.DataFrame, resolution_days: int = 30) -> pd.DataFra
 
     return df
 
-def train_model(dtrain: xgb.DMatrix, dtest: xgb.DMatrix) -> xgb.Booster:
+def train_model(dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.Booster:
     # TODO: Grid search for hyperparameters
 
     params = {
@@ -150,7 +155,7 @@ def train_model(dtrain: xgb.DMatrix, dtest: xgb.DMatrix) -> xgb.Booster:
 
     return model
 
-def evaluate(model: xgb.Booster, dtest: xgb.DMatrix):
+def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix):
     preds = model.predict(dtest)
     truth = dtest.get_label()
 
@@ -178,14 +183,11 @@ def evaluate(model: xgb.Booster, dtest: xgb.DMatrix):
 
     return {"rmse": rmse, "mae": mae, "r2": r2, "feature_importance": importance}
 
-def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, time_train: pd.Series, time_test: pd.Series, non_seasonal_vars: list):
+def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, time_train: pd.Series, time_test: pd.Series, features: list):
     '''
-    Create a SHAP TreeExplainer object to quantify input variable influence on output variables.
+    Compute path-dependent TreeSHAP values on the GPU (XGBoost pred_contribs) to quantify input variable influence on output variables.
     Preserves datetime for heatmap plotting.
     '''
-
-    # Create SHAP explainer
-    masker = shap.maskers.Independent(train, max_samples=len(train))
 
     # Combine training and testing data (features only, datetime separate)
     combined_features = pd.concat([train, test], ignore_index=True)
@@ -196,19 +198,37 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     combined_features = combined_features.iloc[sort_idx].reset_index(drop=True)
     combined_time = combined_time.iloc[sort_idx].reset_index(drop=True)
 
-    print("Calculating SHAP values...")
-    explainer = shap.TreeExplainer(model, masker)
-    shap_vals_combined = explainer(combined_features)
+    # Compute SHAP values on the GPU with XGBoost's built-in GPUTreeSHAP.
+    print("Calculating SHAP values on GPU...")
+    model.set_param({"device": "cuda"})
+    contribs = model.predict(xgb.DMatrix(combined_features), pred_contribs=True)
+    shap_vals_combined = shap.Explanation(
+        values=contribs[:, :-1],
+        base_values=contribs[:, -1],
+        data=combined_features.to_numpy(),
+        feature_names=list(combined_features.columns),
+    )
 
-    # Save SHAP values to dataframe and CSV
-    csv_save_path = f'{S3_BUCKET}/cjense/data/testmodel/shap_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.csv'
-    df_shap = pd.DataFrame(shap_vals_combined.values, columns=FEATURE_COLS)
-    df_shap.to_csv(csv_save_path, index=False)
-    
-    print(f"SHAP value CSV saved to S3: " + csv_save_path)
+    # Save SHAP values to parquet, keyed by (time, x, y) so they can be joined back to the flat feature parquet
+    shap_save_path = f'{S3_BUCKET}/cjense/data/testmodel/shap_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.parquet'
+    df_shap = pd.DataFrame(shap_vals_combined.values, columns=[f"shap_{c}" for c in FEATURE_COLS])
+    df_shap.insert(0, "time", combined_time)
+    df_shap.insert(1, "x", combined_features["x"])
+    df_shap.insert(2, "y", combined_features["y"])
+    df_shap["base_value"] = shap_vals_combined.base_values
+    df_shap.to_parquet(shap_save_path, storage_options=storage_options, index=False)
+
+    print(f"SHAP value parquet saved to S3: " + shap_save_path)
 
     ##### Beeswarm plot #####
-    shap.plots.beeswarm(shap_vals_combined[:, non_seasonal_vars], show=False, max_display=len(FEATURE_COLS))
+    # Plot a random subsample -- a matplotlib scatter of every row is extremely slow.
+    # The full SHAP values are still saved to parquet above and used for the heatmap below.
+    n_rows = len(shap_vals_combined.values)
+    rng = np.random.default_rng(MODEL_SEED)
+    plot_idx = np.sort(rng.choice(n_rows, size=min(n_rows, BEESWARM_MAX_POINTS), replace=False))
+    print(f"Plotting beeswarm with {len(plot_idx):,} of {n_rows:,} rows...")
+    shap.plots.beeswarm(shap_vals_combined[plot_idx][:, features], show=False, max_display=len(FEATURE_COLS))
+    plt.title("SHAP values (path-dependent TreeSHAP, GPU)")
     beeswarm_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
     plt.savefig('./figures/beeswarm.png', dpi=300)
@@ -218,23 +238,33 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     plt.clf()
 
     ##### Heatmap plot #####
-    instance_order = np.arange(len(combined_time))
+    # Average SHAP values over all pixels at each timestep -> one heatmap column per timestep
+    time_key = combined_time.to_numpy()
+    shap_by_time = pd.DataFrame(shap_vals_combined.values, columns=FEATURE_COLS).groupby(time_key).mean()
+    data_by_time = combined_features[FEATURE_COLS].groupby(time_key).mean()
+    base_by_time = pd.Series(shap_vals_combined.base_values).groupby(time_key).mean()
+    times = pd.Series(shap_by_time.index)
 
-    ax = shap.plots.heatmap(shap_vals_combined[:, non_seasonal_vars], instance_order=instance_order, show=False)
+    shap_vals_by_time = shap.Explanation(
+        values=shap_by_time.to_numpy(),
+        base_values=base_by_time.to_numpy(),
+        data=data_by_time.to_numpy(),
+        feature_names=FEATURE_COLS,
+    )
+    instance_order = np.arange(len(times))
+
+    ax = shap.plots.heatmap(shap_vals_by_time[:, features], instance_order=instance_order, show=False)
     ax.set_aspect("auto")
     ax.figure.set_size_inches(15, 5)
 
     # Label the x-axis with the year instead of a raw instance index
-    year_change = combined_time.dt.year.ne(combined_time.dt.year.shift(1))
+    year_change = times.dt.year.ne(times.dt.year.shift(1))
     tick_pos = np.flatnonzero(year_change.to_numpy())
-    tick_labels = combined_time.dt.year.iloc[tick_pos].astype(str)
+    tick_labels = times.dt.year.iloc[tick_pos].astype(str)
     ax.set_xticks(tick_pos)
     ax.set_xticklabels(tick_labels, rotation=0)
     ax.set_xlabel("Year")
-
-    # Mark where train data ends and test data begins
-    split_idx = np.searchsorted(combined_time.values, np.datetime64(TRAIN_CUTOFF))
-    ax.axvline(split_idx - 0.5, color="black", linestyle="--", linewidth=1)
+    ax.set_title("Monthly mean SHAP values over all pixels (path-dependent TreeSHAP, GPU)")
 
     heatmap_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
@@ -259,7 +289,7 @@ def geoshapley_explainer(model: xgb.Booster, train: pd.DataFrame):
     # Save SHAP values to dataframe and CSV
     csv_save_path = f'{S3_BUCKET}/cjense/data/testmodel/geoshapley_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.csv'
     df_shap = pd.DataFrame(geoshapleyvals.values, columns=FEATURE_COLS)
-    df_shap.to_csv(csv_save_path, index=False)
+    df_shap.to_csv(csv_save_path, index=False, storage_options=storage_options)
     
     print(f"GeoShapley value CSV saved to S3: " + csv_save_path)
 
@@ -286,20 +316,23 @@ def main():
         
         # Load spatial and non-spatial variables.
         # This method conserves memory by loading the non-spatial variables lazily and merging once
-        spatial_df = pd.read_parquet('s3://gaia/cjense/data/testmodel/velocity_melt_2000_2008.parquet', storage_options=storage_options)
+        spatial_df = pd.read_parquet(f's3://gaia/cjense/data/mar/basin_meltwater_regridded_daily_ZI_2000_2025_{RESOLUTION}.parquet', storage_options=storage_options)
         non_spatial = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet", storage_options=storage_options)
-        
+
         spatial_df = spatial_df.reset_index()
         non_spatial = non_spatial.reset_index()
         non_spatial["time"] = pd.to_datetime(non_spatial["time"]).dt.normalize()
         spatial_df["time"] = pd.to_datetime(spatial_df["time"])
 
+        spatial_df = spatial_df.rename(columns={"RU": "meltwater"})
+        non_spatial = non_spatial.resample(RESOLUTION, on="time").mean().reset_index()
         df = spatial_df.merge(non_spatial, on="time", how="outer")
+        df = df.astype({c: "float32" for c in df.select_dtypes("float64").columns})  # halve memory
 
-        # df = df.resample("ME", on='time').mean().reset_index()
-        resolution_days = int(RESOLUTION.replace("D", ""))
+        # Average timestep length in days for any pandas frequency
+        resolution_days = pd.date_range("2000-01-01", periods=101, freq=RESOLUTION).to_series().diff().mean() / pd.Timedelta("1D")
         df = engineer_features(df, resolution_days=resolution_days)
-        
+
         # TODO: Optimize datatypes (convert to float32) to conserve memory
 
         cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}{SPECIAL_NAME}.parquet"
@@ -316,7 +349,7 @@ def main():
     # You can't predict NaN values!
     df = df.dropna(subset=[TARGET_COL])
 
-    # Keep time separate for SHAP analysis (datetime not allowed in DMatrix)
+    # Keep time separate for SHAP analysis (datetime not allowed in QuantileDMatrix)
     time_col = df["time"].copy()
 
     # Split data into train and test set
@@ -327,14 +360,15 @@ def main():
     # Delete full dataframe from memory to conserve memory
     del df, time_col
 
-    # Construct DMatrices for training and testing (datetime excluded)
-    dtrain = xgb.DMatrix(X_train, label=y_train)
-    dtest = xgb.DMatrix(X_test, label=y_test)
+    # Construct QuantileDMatrices for training and testing (datetime excluded)
+    dtrain = xgb.QuantileDMatrix(X_train, label=y_train)
+    dtest = xgb.QuantileDMatrix(X_test, label=y_test, ref=dtrain)
     
     # TODO: Grid search for hyperparameters
     
     local_model_path = f"/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/models/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.json"
     s3_model_path = f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.json"
+    metrics = None  # only computed when a new model is trained
     try:
         # Try to load an existing model
         try:
@@ -371,8 +405,7 @@ def main():
         print(f"Model saved to S3: " + s3_model_path)
     
     # Calculate SHAP values
-    print("Calculating SHAP values...")
-    shapvals = shap_explainer(model, X_train, X_test, time_train, time_test, NON_SEASONAL_VARS)
+    shapvals = shap_explainer(model, X_train, X_test, time_train, time_test, FEATURE_COLS)
     
     # Calculate GeoShapley values
     # TODO
