@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 import matplotlib.pyplot as plt
+import skforecase.metrics as skmetrics
 
 from config import *
 
@@ -13,7 +14,7 @@ def train_model(dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.
         "tree_method":      "hist",
         "device":           "cuda",
         "objective":        "reg:squarederror",
-        "eval_metric":      ["rmse", "mae"],
+        "eval_metric":      ["rmse", "mae", "mape"],
         "max_depth":        6,
         "eta":              0.05,
         "subsample":        0.8,
@@ -33,7 +34,7 @@ def train_model(dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.
 
     return model
 
-def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix):
+def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix, train: pd.DataFrame):
     preds = model.predict(dtest)
     truth = dtest.get_label()
 
@@ -46,6 +47,13 @@ def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix):
     mae  = np.mean(np.abs(preds - truth))
     truth_var = np.sum((truth - truth.mean()) ** 2)
     r2 = 1 - np.sum((truth - preds) ** 2) / truth_var if truth_var > 0 else float("nan")
+    
+    # Calculate seasonality-specific metrics
+    rmsse = skmetrics.root_mean_squared_scaled_error(truth, preds, train)
+    mase = skmetrics.mean_absolute_scaled_error(truth, preds, train)
+    smape = skmetrics.symmetric_mean_absolute_percentage_error(truth, preds)
+    
+    # TODO: Calculate seasonal (phase, amplitude, etc.) errors
 
     importance = model.get_score(importance_type="gain")
     importance = pd.Series(importance).sort_values(ascending=False)
@@ -54,9 +62,12 @@ def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix):
     with open("modelresults.md", 'a') as outfile:
         outfile.write(NOTES + "\n\n")
         outfile.write("### Model Metrics\n")
-        outfile.write(f"- RMSE : {rmse:.4f} Gt/yr\n")
-        outfile.write(f"- MAE  : {mae:.4f} Gt/yr\n")
-        outfile.write(f"- R²   : {r2:.4f}\n")
+        outfile.write(f"- RMSE   : {rmse:.4f} Gt/yr\n")
+        outfile.write(f"- MAE    : {mae:.4f} Gt/yr\n")
+        outfile.write(f"- R²     : {r2:.4f}\n")
+        outfile.write(f"- RMSSE  : {rmsse:.4f}\n")
+        outfile.write(f"- MASE   : {mase:.4f}\n")
+        outfile.write(f"- SMAPE  : {smape:.4f}\n")
         outfile.write(f"\n### Top 10 features by gain\n")
         outfile.write(importance.head(10).to_markdown() + "\n\n")
 
@@ -101,7 +112,7 @@ def main():
     model = train_model(dtrain, dtest)
 
     # Calculate model metrics
-    metrics = evaluate(model, dtest)
+    metrics = evaluate(model, dtest, train)
     plot_predictions(model, train, test)
 
     # Save the model to disk
