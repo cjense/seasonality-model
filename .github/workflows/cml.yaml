@@ -52,15 +52,11 @@ jobs:
       - name: Upload figures to S3
         run: |
           pixi run -e seasonality-model python - <<'PY'
-          import os, s3fs
-          fs = s3fs.S3FileSystem(
-              key=os.environ["AWS_ACCESS_KEY_ID"],
-              secret=os.environ["AWS_SECRET_ACCESS_KEY"],
-              client_kwargs={"endpoint_url": os.environ["S3_ENDPOINT_URL"]},
-          )
+          import os
+          from config import fs, S3_BUCKET
           for name in ["xgboost_result.png", "beeswarm.png", "heatmap.png"]:
               fs.put(f"figures/{name}",
-                     f"gaia/cjense/ci-figures/{os.environ['GITHUB_RUN_ID']}/{name}",
+                     f"{S3_BUCKET}/cjense/ci-figures/{os.environ['GITHUB_RUN_ID']}/{name}",
                      ACL="public-read", ContentType="image/png")
           PY
 
