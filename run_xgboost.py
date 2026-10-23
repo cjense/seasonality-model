@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 import matplotlib.pyplot as plt
-import skforecase.metrics as skmetrics
+import skforecast.metrics as skmetrics
 
 from config import *
 
