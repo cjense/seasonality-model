@@ -2,6 +2,10 @@ name: Model Training & SHAP Analysis
 
 on: [push, pull_request]
 
+permissions:
+  contents: write       # commit comments on push events
+  pull-requests: write  # PR comments
+
 jobs:
 
   train-and-evaluate:
@@ -45,6 +49,17 @@ jobs:
           pixi run -e seasonality-model python -u run_geoshapley.py
           date
 
+      - name: Upload figures to S3
+        run: |
+          pixi run -e seasonality-model python - <<'PY'
+          import os
+          from config import fs, S3_BUCKET
+          for name in ["xgboost_result.png", "beeswarm.png", "heatmap.png"]:
+              fs.put(f"figures/{name}",
+                     f"{S3_BUCKET}/cjense/ci-figures/{os.environ['GITHUB_RUN_ID']}/{name}",
+                     ACL="public-read", ContentType="image/png")
+          PY
+
       - name: Set up CML
         uses: iterative/setup-cml@v2
 
@@ -52,8 +67,9 @@ jobs:
         env:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          FIG_URL="${S3_ENDPOINT_URL}/gaia/cjense/ci-figures/${GITHUB_RUN_ID}"
           echo "## Figures" >> modelresults.md
-          echo "![](./figures/xgboost_result.png)" >> modelresults.md
-          echo "![](./figures/beeswarm.png)" >> modelresults.md
-          echo "![](./figures/heatmap.png)" >> modelresults.md
-          cml comment create modelresults.md
+          echo "![](${FIG_URL}/xgboost_result.png)" >> modelresults.md
+          echo "![](${FIG_URL}/beeswarm.png)" >> modelresults.md
+          echo "![](${FIG_URL}/heatmap.png)" >> modelresults.md
+          cml comment create --no-publish modelresults.md
