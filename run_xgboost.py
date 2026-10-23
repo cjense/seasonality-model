@@ -48,9 +48,9 @@ def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix, train: pd.DataFrame
     truth_var = np.sum((truth - truth.mean()) ** 2)
     r2 = 1 - np.sum((truth - preds) ** 2) / truth_var if truth_var > 0 else float("nan")
     
-    # Calculate seasonality-specific metrics
-    rmsse = skmetrics.root_mean_squared_scaled_error(truth, preds, train)
-    mase = skmetrics.mean_absolute_scaled_error(truth, preds, train)
+    y_train = train[TARGET_COL].dropna().to_numpy()
+    rmsse = skmetrics.root_mean_squared_scaled_error(truth, preds, y_train)
+    mase = skmetrics.mean_absolute_scaled_error(truth, preds, y_train)
     smape = skmetrics.symmetric_mean_absolute_percentage_error(truth, preds)
     
     # TODO: Calculate seasonal (phase, amplitude, etc.) errors
