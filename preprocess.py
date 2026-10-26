@@ -25,11 +25,11 @@ def measure_correlation(df: pd.DataFrame):
     heatmap.set_title('Correlation Heatmap')
     plt.tight_layout()
     
-    plt.savefig('./figures/heatmap.png', dpi=300, bbox_inches='tight')
-    heatmap_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
+    plt.savefig('./figures/correlation.png', dpi=300, bbox_inches='tight')
+    heatmap_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_correlation_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
     plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
-    fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
+    fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_correlation_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
     plt.clf()
 
 def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
