@@ -25,6 +25,7 @@ boto3 = ">=1.43.75,<2"
 tabulate = "*"
 zarr = ">=3.4.1,<4"
 skforecast = ">=0.24.0,<0.25"
+seaborn = "*"
 
 [pypi-dependencies]
 geoshapley = ">=0.2.0.0, <0.3"
