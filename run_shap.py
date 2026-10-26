@@ -36,7 +36,7 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
         feature_perturbation="interventional", # Calculate SHAP values using interventional "true to the data" SHAP values
     )
     
-    shap_vals_combined = explainer.shap_values(combined_features)
+    shap_vals_combined = explainer(combined_features)
 
     # Save SHAP values to parquet, keyed by (time, x, y) so they can be joined back to the flat feature parquet
     shap_save_path = f'{S3_BUCKET}/cjense/data/testmodel/shap_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.parquet'
