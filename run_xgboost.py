@@ -51,6 +51,7 @@ def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix, train: pd.DataFrame
     
     # TODO: Calculate seasonal (phase, amplitude, etc.) errors
 
+    importance = model.get_score(importance_type="gain")
     importance = pd.Series(importance).sort_values(ascending=False)
     
     # Write metrics to file for easy viewing
