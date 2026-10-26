@@ -54,7 +54,7 @@ jobs:
           pixi run -e seasonality-model python - <<'PY'
           import os
           from config import fs, S3_BUCKET
-          for name in ["correlation.png", "xgboost_result.png", "beeswarm.png", "heatmap.png"]::
+          for name in ["correlation.png", "xgboost_result.png", "beeswarm.png", "heatmap.png"]:
               fs.put(f"figures/{name}",
                      f"{S3_BUCKET}/cjense/ci-figures/{os.environ['GITHUB_RUN_ID']}/{name}",
                      ACL="public-read", ContentType="image/png")
