@@ -1,7 +1,36 @@
 import numpy as np
 import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 from config import *
+
+non_seasonal_vars = [
+        # Spatial vars
+        "meltwater", #"ice_velocity",
+        # Non-spatial vars
+        "airtemp", "masked_mel_velocity", "melange_area_km2", 
+        "ocean_EN4_TFc", "area_km2", "area_change_km2",
+        # Space
+        "Discharge (Gt/yr)",
+    ]
+
+def measure_correlation(df: pd.DataFrame):
+    # TODO: make DAG
+    
+    df = df[non_seasonal_vars]
+    
+    plt.figure(figsize=(16, 6))
+    heatmap = sns.heatmap(df.corr(), vmin=-1, vmax=1, annot=True)
+    heatmap.set_title('Correlation Heatmap')
+    plt.tight_layout()
+    
+    plt.savefig('./figures/heatmap.png', dpi=300, bbox_inches='tight')
+    heatmap_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
+    plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
+    # Save figure to S3
+    fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
+    plt.clf()
 
 def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
     """
@@ -18,16 +47,6 @@ def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
     steps_30d  = max(1, round(30  / resolution_days))
     steps_60d  = max(1, round(60  / resolution_days))
     steps_90d  = max(1, round(90  / resolution_days))
-    
-    non_seasonal_vars = [
-        # Spatial vars
-        "meltwater", #"ice_velocity",
-        # Non-spatial vars
-        "airtemp", "masked_mel_velocity", "melange_area_km2", 
-        "ocean_EN4_TFc", "area_km2", "area_change_km2",
-        # Space
-        "Discharge (Gt/yr)",
-    ]
 
     for feature in non_seasonal_vars:
         df["lag_1step_"+feature] = px[feature].shift(1)
@@ -116,6 +135,9 @@ def main():
     # Drop NaNs from target feature
     # You can't predict NaN values!
     df = df.dropna(subset=[TARGET_COL])
+    
+    # Make a correlation heatmap
+    measure_correlation(df)
 
     # Split data into train and test set by time, keeping time alongside the features and target
     # so downstream scripts don't need to split it separately. A random split would leak: the
