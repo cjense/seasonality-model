@@ -17,7 +17,7 @@ nccl = { version = "*", channel = "conda-forge" }
 dask = ">=2026.8.0,<2027"
 pandas = ">=3.0.6,<4"
 xarray = ">=2026.7.0,<2027"
-shap = ">=0.52.0,<0.53"
+shap = "*"
 matplotlib = ">=3.11.2,<4"
 jupyter = ">=1.1.1,<2"
 s3fs = ">=2026.7.0,<2027"
