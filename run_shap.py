@@ -29,6 +29,7 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     model.set_param({"device": "cuda"})
     contribs = model.predict(xgb.DMatrix(combined_features), pred_contribs=True)
     shap_vals_combined = shap.TreeExplainer(
+        model=model,
         data=combined_features.to_numpy(),
         feature_names=list(combined_features.columns),
         model_output="raw",
