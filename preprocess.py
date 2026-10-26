@@ -16,12 +16,18 @@ non_seasonal_vars = [
     ]
 
 def measure_correlation(df: pd.DataFrame):
-    # TODO: make DAG
-    
     df = df[non_seasonal_vars]
     
+    # Calculate correlation matrix or load an existing one from s3
+    corr_matrix_path = f"{S3_BUCKET}/cjense/data/testmodel/correlation_matrix_{RESOLUTION}{SPECIAL_NAME}.parquet"
+    try:
+        corr_matrix = df.corr(numeric_only=True, method='spearman')
+        corr_matrix.to_parquet(corr_matrix_path, storage_options=storage_options)
+    except:
+        corr_matrix = pd.read_parquet(corr_matrix_path, storage_options=storage_options)
+    
     plt.figure(figsize=(16, 6))
-    heatmap = sns.heatmap(df.corr(), vmin=-1, vmax=1, annot=True)
+    heatmap = sns.heatmap(corr_matrix, vmin=-1, vmax=1, annot=True)
     heatmap.set_title('Correlation Heatmap')
     plt.tight_layout()
     
