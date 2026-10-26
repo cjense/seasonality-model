@@ -17,14 +17,20 @@ non_seasonal_vars = [
 
 def measure_correlation(df: pd.DataFrame):
     df = df[non_seasonal_vars]
+    # Take the mean at every timestep
+    # (keeps non-spatial variables the same, averages spatial variables)
+    df_ts = df[["time"] + non_seasonal_vars].groupby("time").mean()
     
     # Calculate correlation matrix or load an existing one from s3
     corr_matrix_path = f"{S3_BUCKET}/cjense/data/testmodel/correlation_matrix_{RESOLUTION}{SPECIAL_NAME}.parquet"
     try:
-        corr_matrix = df.corr(numeric_only=True, method='spearman')
-        corr_matrix.to_parquet(corr_matrix_path, storage_options=storage_options)
-    except:
         corr_matrix = pd.read_parquet(corr_matrix_path, storage_options=storage_options)
+    except:
+        corr_matrix = df_ts.corr(numeric_only=True, method='spearman')
+        try:
+            corr_matrix.to_parquet(corr_matrix_path, storage_options=storage_options)
+        except Exception as e:
+            print(f"Warning: could not save correlation matrix to S3: {e}")
     
     plt.figure(figsize=(16, 6))
     heatmap = sns.heatmap(corr_matrix, vmin=-1, vmax=1, annot=True)
@@ -37,6 +43,7 @@ def measure_correlation(df: pd.DataFrame):
     # Save figure to S3
     fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_correlation_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
     plt.clf()
+    plt.close()
 
 def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
     """
