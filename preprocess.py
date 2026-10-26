@@ -16,7 +16,7 @@ non_seasonal_vars = [
     ]
 
 def measure_correlation(df: pd.DataFrame):
-    df = df[non_seasonal_vars]
+    df = df[non_seasonal_vars].reset_index()
     # Take the mean at every timestep
     # (keeps non-spatial variables the same, averages spatial variables)
     df_ts = df[["time"] + non_seasonal_vars].groupby("time").mean()
