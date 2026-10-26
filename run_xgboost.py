@@ -71,7 +71,7 @@ def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix, train: pd.DataFrame
         outfile.write(f"\n### Top 10 features by gain\n")
         outfile.write(importance.head(10).to_markdown() + "\n\n")
 
-    return {"rmse": rmse, "mae": mae, "r2": r2, "feature_importance": importance}
+    return {"rmse": rmse, "mae": mae, "r2": r2, "rmsse": rmsse, "mase": mase, "smape": smape, "feature_importance": importance}
 
 def plot_predictions(model: xgb.Booster, train_df: pd.DataFrame, test_df: pd.DataFrame):
     """Time series of truth vs. predictions over both the train and test periods."""
