@@ -17,7 +17,7 @@ nccl = { version = "*", channel = "conda-forge" }
 dask = ">=2026.8.0,<2027"
 pandas = ">=3.0.6,<4"
 xarray = ">=2026.7.0,<2027"
-shap = ">=0.52.0,<0.53"
+shap = "*"
 matplotlib = ">=3.11.2,<4"
 jupyter = ">=1.1.1,<2"
 s3fs = ">=2026.7.0,<2027"
@@ -25,6 +25,7 @@ boto3 = ">=1.43.75,<2"
 tabulate = "*"
 zarr = ">=3.4.1,<4"
 skforecast = ">=0.24.0,<0.25"
+seaborn = "*"
 
 [pypi-dependencies]
 geoshapley = ">=0.2.0.0, <0.3"
