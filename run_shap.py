@@ -30,12 +30,19 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     explainer = shap.TreeExplainer(
         model=model,
         data=None,
-        feature_names=list(combined_features.columns),
+        feature_names=FEATURE_COLS,
         model_output="raw",
-        feature_perturbation="tree_path_dependent", # Calculate SHAP values using tree_path_dependent "true to the data" SHAP values
+        feature_perturbation="tree_path_dependent",
     )
 
-    shap_vals_combined = explainer.shap_values(combined_features)
+    shap_vals_raw = explainer.shap_values(combined_features[FEATURE_COLS])
+
+    shap_vals_combined = shap.Explanation(
+        values=shap_vals_raw,
+        base_values=np.full(len(shap_vals_raw), explainer.expected_value),
+        data=combined_features[FEATURE_COLS].to_numpy(),
+        feature_names=FEATURE_COLS,
+    )
 
     # Save SHAP values to parquet, keyed by (time, x, y) so they can be joined back to the flat feature parquet
     shap_save_path = f'{S3_BUCKET}/cjense/data/testmodel/shap_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.parquet'
