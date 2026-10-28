@@ -27,12 +27,21 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     # Compute SHAP values on the GPU with XGBoost's built-in GPUTreeSHAP.
     print("Calculating SHAP values on GPU...")
     model.set_param({"device": "cuda"})
-    contribs = model.predict(xgb.DMatrix(combined_features), pred_contribs=True)
+    explainer = shap.TreeExplainer(
+        model=model,
+        data=None,
+        feature_names=FEATURE_COLS,
+        model_output="raw",
+        feature_perturbation="tree_path_dependent",
+    )
+
+    shap_vals_raw = explainer.shap_values(combined_features[FEATURE_COLS])
+
     shap_vals_combined = shap.Explanation(
-        values=contribs[:, :-1],
-        base_values=contribs[:, -1],
-        data=combined_features.to_numpy(),
-        feature_names=list(combined_features.columns),
+        values=shap_vals_raw,
+        base_values=np.full(len(shap_vals_raw), explainer.expected_value),
+        data=combined_features[FEATURE_COLS].to_numpy(),
+        feature_names=FEATURE_COLS,
     )
 
     # Save SHAP values to parquet, keyed by (time, x, y) so they can be joined back to the flat feature parquet
