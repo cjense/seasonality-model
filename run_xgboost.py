@@ -15,7 +15,7 @@ def train_model(dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.
         "device":           "cuda",
         "objective":        "reg:squarederror",
         "eval_metric":      ["rmse", "mae", "mape"],
-        "max_depth":        6,
+        "max_depth":        3,
         "eta":              0.05,
         "subsample":        0.8,
         "colsample_bytree": 0.8,

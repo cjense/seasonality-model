@@ -12,7 +12,7 @@ MODEL_SEED    = 42                    # random seed to train model
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
 SPECIAL_NAME  = "_no_vel"             # include a special signifier to the end of filenames
 NOTES         = ("Run with encodings for all feature columns with lags"
-                 "and season sin and cosine. Test 2000-2021. Calculating SHAP values of all features using GPU")
+                 "and season sin and cosine. Test 2000-2021 with max_depth 3. Calculating SHAP values of all features using GPU")
 
 FEATURE_COLS = [
     # Spatial vars
