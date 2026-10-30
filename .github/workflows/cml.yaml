@@ -59,10 +59,10 @@ jobs:
                      f"{S3_BUCKET}/cjense/ci-figures/{os.environ['GITHUB_RUN_ID']}/{name}",
                      ACL="public-read", ContentType="image/png")
           PY
+
       - name: Report results
         env:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FIG_URL="${S3_ENDPOINT_URL}/gaia/cjense/ci-figures/${GITHUB_RUN_ID}"
           echo "## Figures" >> modelresults.md
@@ -72,11 +72,15 @@ jobs:
           echo "![](${FIG_URL}/heatmap.png)" >> modelresults.md
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            gh pr comment "${{ github.event.pull_request.number }}" --body-file modelresults.md
-          else
-            gh api \
-              --method POST \
+            curl -s -X POST \
+              -H "Authorization: token ${REPO_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
-              /repos/${{ github.repository }}/commits/${GITHUB_SHA}/comments \
-              -f body="$(cat modelresults.md)"
+              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+              -d "{\"body\": $(cat modelresults.md | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}"
+          else
+            curl -s -X POST \
+              -H "Authorization: token ${REPO_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/commits/${GITHUB_SHA}/comments" \
+              -d "{\"body\": $(cat modelresults.md | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}"
           fi
