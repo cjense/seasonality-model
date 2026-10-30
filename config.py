@@ -20,10 +20,10 @@ FEATURE_COLS = [
     "meltwater", #"ice_velocity",                                   # TODO: Add ice_elevation, distance_to_terminus
     # Non-spatial vars (broadcast)
     "airtemp", "masked_mel_velocity", "melange_area_km2", 
-    "ocean_EN4_TFc", "area_km2", #"area_change_km2",                # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
+    "ocean_EN4_TFc", "area_km2"               # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     # Lag features
     *[f"{lag}_{var}" for var in ["meltwater", "airtemp", "masked_mel_velocity", "melange_area_km2",
-                                 "ocean_EN4_TFc", "area_km2", "area_change_km2"]
+                                 "ocean_EN4_TFc", "area_km2"]
       for lag in ("lag_1step", "lag_60d", "lag_90d")],      # no discharge lags (target)
     # "roll_30d_mean", "roll_30d_std",
     # Time encodings
@@ -38,7 +38,7 @@ NON_SEASONAL_VARS = [
     "meltwater", #"ice_velocity",
     # Non-spatial vars
     "airtemp", "masked_mel_velocity", "melange_area_km2",
-    "ocean_EN4_TFc", "area_km2", "area_change_km2",
+    "ocean_EN4_TFc", "area_km2",
     # Space
     "x", "y",
 ]
