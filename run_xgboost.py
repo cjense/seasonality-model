@@ -3,35 +3,68 @@ import pandas as pd
 import xgboost as xgb
 import matplotlib.pyplot as plt
 import skforecast.metrics as skmetrics
+from hyperopt import hp, tpe, fmin, STATUS_OK, Trials
 
 from config import *
 
 
 def train_model(dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.Booster:
-    # TODO: Grid search for hyperparameters
+    space = {
+        'max_depth':        hp.quniform('max_depth', 3, 10, 1),
+        'eta':              hp.loguniform('eta', -5, -1),
+        'subsample':        hp.uniform('subsample', 0.5, 1),
+        'colsample_bytree': hp.uniform('colsample_bytree', 0.5, 1),
+        'min_child_weight': hp.quniform('min_child_weight', 5, 30, 1),
+    }
 
-    params = {
+    def objective(hyperparams):
+        params = {
+            "tree_method":      "hist",
+            "device":           "cuda",
+            "objective":        "reg:squarederror",
+            "eval_metric":      "rmse",
+            "max_depth":        int(hyperparams['max_depth']),
+            "eta":              hyperparams['eta'],
+            "subsample":        hyperparams['subsample'],
+            "colsample_bytree": hyperparams['colsample_bytree'],
+            "min_child_weight": int(hyperparams['min_child_weight']),
+            "seed":             MODEL_SEED,
+        }
+        cv_result = xgb.cv(
+            params,
+            dtrain,
+            num_boost_round=1000,
+            nfold=5,
+            early_stopping_rounds=50,
+            verbose_eval=False,
+        )
+        best_rmse = cv_result['test-rmse-mean'].min()
+        return {'loss': best_rmse, 'status': STATUS_OK}
+
+    trials = Trials()
+    best = fmin(objective, space, algo=tpe.suggest, max_evals=50, trials=trials)
+
+    # Retrain on full dtrain with the best hyperparams found
+    best_params = {
         "tree_method":      "hist",
         "device":           "cuda",
         "objective":        "reg:squarederror",
         "eval_metric":      ["rmse", "mae", "mape"],
-        "max_depth":        6,
-        "eta":              0.05,
-        "subsample":        0.8,
-        "colsample_bytree": 0.8,
-        "min_child_weight": 10,
+        "max_depth":        int(best['max_depth']),
+        "eta":              best['eta'],
+        "subsample":        best['subsample'],
+        "colsample_bytree": best['colsample_bytree'],
+        "min_child_weight": int(best['min_child_weight']),
         "seed":             MODEL_SEED,
     }
-
     model = xgb.train(
-        params,
+        best_params,
         dtrain,
         num_boost_round=1000,
         evals=[(dtrain, "train"), (dtest, "test")],
         early_stopping_rounds=50,
         verbose_eval=25,
     )
-
     return model
 
 def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix, train: pd.DataFrame):
