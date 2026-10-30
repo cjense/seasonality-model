@@ -156,7 +156,7 @@ def main():
     # target is the same for every pixel at a timestep, so test timesteps would also appear in train.
     df = df[["time", *FEATURE_COLS, TARGET_COL]]
     train = df[df["time"] < TRAIN_CUTOFF]
-    test  = df[df["time"] >= TEST_START]
+    test  = df[df['time'].between(TEST_START, '2021-12-31')]
 
     # Save train and test sets for run_xgboost.py and run_shap.py
     train.to_parquet(TRAIN_PATH, storage_options=storage_options, index=False)

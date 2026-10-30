@@ -5,14 +5,14 @@ import s3fs
 GLACIER_NAME  = "zach"
 S3_BUCKET     = "s3://gaia"
 RESOLUTION    = "MS"                  # MS = monthly on the first of the month
-TRAIN_CUTOFF  = "2022-01-01"          # everything before this is train
-TEST_START    = "2022-01-01"          # everything from here is test
+TRAIN_CUTOFF  = "2018-01-01"          # everything before this is train
+TEST_START    = "2018-01-01"          # everything from here is test
 CACHE_PARQUET = True                  # write flat df to S3 after extraction
 MODEL_SEED    = 42                    # random seed to train model
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
 SPECIAL_NAME  = "_no_vel"             # include a special signifier to the end of filenames
 NOTES         = ("Run with encodings for all feature columns with lags"
-                 "and season sin and cosine. Calculating SHAP values of all features using GPU")
+                 "and season sin and cosine. Test 2000-2021. Calculating SHAP values of all features using GPU")
 
 FEATURE_COLS = [
     # Spatial vars
