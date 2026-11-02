@@ -59,7 +59,7 @@ def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix, train: pd.DataFrame
     importance = pd.Series(importance).sort_values(ascending=False)
     
     # Write metrics to file for easy viewing
-    with open("modelresults.md", 'a') as outfile:
+    with open(RESULTS_PATH, 'a') as outfile:
         outfile.write(NOTES + "\n\n")
         outfile.write("### Model Metrics\n")
         outfile.write(f"- RMSE   : {rmse:.4f} Gt/yr\n")
@@ -90,13 +90,14 @@ def plot_predictions(model: xgb.Booster, train_df: pd.DataFrame, test_df: pd.Dat
     ax.axvline(pd.Timestamp(TRAIN_CUTOFF), color="gray", linestyle=":", linewidth=1)
     ax.set_xlabel("Time")
     ax.set_ylabel(TARGET_COL)
+    ax.set_title(f"Period: {PERIOD}")
     ax.legend()
-    xgboost_fig_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_xgbresult_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
+    xgboost_fig_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_xgbresult_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
-    plt.savefig('./figures/xgboost_result.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'./figures/xgboost_result_{PERIOD}.png', dpi=300, bbox_inches='tight')
     plt.savefig(xgboost_fig_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
-    fs.put(xgboost_fig_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_xgbresult_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
+    fs.put(xgboost_fig_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_xgbresult_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png')
     plt.close(fig)
 
 def main():

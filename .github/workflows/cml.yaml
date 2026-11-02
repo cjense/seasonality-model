@@ -12,6 +12,9 @@ jobs:
     # TODO: maybe rename these things
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
 
+    env:
+      PERIODS: "pre2015 post2015" # For training and testing pre- and post- Sentinel-1 launch
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -25,28 +28,40 @@ jobs:
         run: |
           set -x
           date
-          pixi run -e seasonality-model python -u preprocess.py
+          for PERIOD in $PERIODS; do
+            echo "=== Period: $PERIOD ==="
+            PERIOD=$PERIOD pixi run -e seasonality-model python -u preprocess.py
+          done
           date
 
       - name: Train model
         run: |
           set -x
           date
-          pixi run -e seasonality-model python -u run_xgboost.py
+          for PERIOD in $PERIODS; do
+            echo "=== Period: $PERIOD ==="
+            PERIOD=$PERIOD pixi run -e seasonality-model python -u run_xgboost.py
+          done
           date
 
       - name: Calculate SHAP values
         run: |
           set -x
           date
-          pixi run -e seasonality-model python -u run_shap.py
+          for PERIOD in $PERIODS; do
+            echo "=== Period: $PERIOD ==="
+            PERIOD=$PERIOD pixi run -e seasonality-model python -u run_shap.py
+          done
           date
 
       - name: Calculate GeoShapley values
         run: |
           set -x
           date
-          pixi run -e seasonality-model python -u run_geoshapley.py
+          for PERIOD in $PERIODS; do
+            echo "=== Period: $PERIOD ==="
+            PERIOD=$PERIOD pixi run -e seasonality-model python -u run_geoshapley.py
+          done
           date
 
       - name: Upload figures to S3
@@ -54,7 +69,10 @@ jobs:
           pixi run -e seasonality-model python - <<'PY'
           import os
           from config import fs, S3_BUCKET
-          for name in ["correlation.png", "xgboost_result.png", "beeswarm.png", "heatmap.png"]:
+          names = ["correlation.png"]
+          for period in os.environ["PERIODS"].split():
+              names += [f"xgboost_result_{period}.png", f"beeswarm_{period}.png", f"heatmap_{period}.png"]
+          for name in names:
               fs.put(f"figures/{name}",
                      f"{S3_BUCKET}/cjense/ci-figures/{os.environ['GITHUB_RUN_ID']}/{name}",
                      ACL="public-read", ContentType="image/png")
@@ -68,9 +86,13 @@ jobs:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FIG_URL="${S3_ENDPOINT_URL}/gaia/cjense/ci-figures/${GITHUB_RUN_ID}"
-          echo "## Figures" >> modelresults.md
+          : > modelresults.md
           echo "![](${FIG_URL}/correlation.png)" >> modelresults.md
-          echo "![](${FIG_URL}/xgboost_result.png)" >> modelresults.md
-          echo "![](${FIG_URL}/beeswarm.png)" >> modelresults.md
-          echo "![](${FIG_URL}/heatmap.png)" >> modelresults.md
+          for PERIOD in $PERIODS; do
+            cat "modelresults_${PERIOD}.md" >> modelresults.md
+            echo "### Figures (${PERIOD})" >> modelresults.md
+            echo "![](${FIG_URL}/xgboost_result_${PERIOD}.png)" >> modelresults.md
+            echo "![](${FIG_URL}/beeswarm_${PERIOD}.png)" >> modelresults.md
+            echo "![](${FIG_URL}/heatmap_${PERIOD}.png)" >> modelresults.md
+          done
           cml comment create --no-publish modelresults.md

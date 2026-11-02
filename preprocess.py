@@ -92,8 +92,9 @@ def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
     return df
 
 def main():
-    # First step of the pipeline: start a fresh modelresults.md for this run
-    open("modelresults.md", "w").close()
+    # First step of the pipeline: start a fresh results file for this period
+    with open(RESULTS_PATH, "w") as outfile:
+        outfile.write(f"## Period: {PERIOD} (train {PERIOD_START} to {TRAIN_CUTOFF}, test {TEST_START} to {PERIOD_END})\n\n")
 
     # Look for existing file of the correct resolution
     cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}{SPECIAL_NAME}.parquet"
@@ -103,7 +104,7 @@ def main():
         print("Found cached file.")
 
         # Record data size and location
-        with open("modelresults.md", 'a') as outfile:
+        with open(RESULTS_PATH, 'a') as outfile:
             outfile.write("### Data\n")
             outfile.write(f"Loaded from cache at {cache_path}: {len(df):,} rows, {df.memory_usage(deep=True).sum() / 1e9:.2f} GB\n\n")
             df.head().to_markdown(buf=outfile)
@@ -138,7 +139,7 @@ def main():
         df.to_parquet(cache_path, storage_options=storage_options, index=False)
         
         # Record making cached file
-        with open("modelresults.md", 'a') as outfile:
+        with open(RESULTS_PATH, 'a') as outfile:
             outfile.write("### Data\n")
             outfile.write(f"No cached file found. Made new file at {RESOLUTION} resolution and uploaded it to s3: {cache_path}.\n\n")
             df.head().to_markdown(buf=outfile)
@@ -155,8 +156,8 @@ def main():
     # so downstream scripts don't need to split it separately. A random split would leak: the
     # target is the same for every pixel at a timestep, so test timesteps would also appear in train.
     df = df[["time", *FEATURE_COLS, TARGET_COL]]
-    train = df[df["time"] < TRAIN_CUTOFF]
-    test  = df[df['time'].between(TEST_START, '2021-12-31')]
+    train = df[df["time"].between(PERIOD_START, TRAIN_CUTOFF, inclusive="left")]
+    test  = df[df["time"].between(TEST_START, PERIOD_END)]
 
     # Save train and test sets for run_xgboost.py and run_shap.py
     train.to_parquet(TRAIN_PATH, storage_options=storage_options, index=False)
