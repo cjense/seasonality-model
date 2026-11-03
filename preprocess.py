@@ -115,7 +115,7 @@ def main():
         
         # Load spatial and non-spatial variables.
         # This method conserves memory by loading the non-spatial variables lazily and merging once
-        spatial_df = pd.read_parquet(f's3://gaia/cjense/data/mar/basin_meltwater_regridded_daily_ZI_2000_2025_{RESOLUTION}.parquet', storage_options=storage_options)
+        spatial_df = pd.read_parquet(f's3://gaia/cjense/data/mar/basin_meltwater_regridded_daily_ZI_2000_2025_daily.parquet', storage_options=storage_options)
         non_spatial = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet", storage_options=storage_options)
 
         spatial_df = spatial_df.reset_index()
