@@ -71,7 +71,8 @@ jobs:
           from config import fs, S3_BUCKET
           names = ["correlation.png"]
           for period in os.environ["PERIODS"].split():
-              names += [f"xgboost_result_{period}.png", f"beeswarm_{period}.png", f"heatmap_{period}.png"]
+              names += [f"xgboost_result_{period}.png", f"beeswarm_{period}.png", f"heatmap_{period}.png",
+                        f"geoshapley_map_{period}.png"]
           for name in names:
               fs.put(f"figures/{name}",
                      f"{S3_BUCKET}/cjense/ci-figures/{os.environ['GITHUB_RUN_ID']}/{name}",
@@ -94,5 +95,6 @@ jobs:
             echo "![](${FIG_URL}/xgboost_result_${PERIOD}.png)" >> modelresults.md
             echo "![](${FIG_URL}/beeswarm_${PERIOD}.png)" >> modelresults.md
             echo "![](${FIG_URL}/heatmap_${PERIOD}.png)" >> modelresults.md
+            echo "![](${FIG_URL}/geoshapley_map_${PERIOD}.png)" >> modelresults.md
           done
           cml comment create --no-publish modelresults.md
