@@ -1,3 +1,4 @@
+import textwrap
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -17,16 +18,12 @@ non_seasonal_vars = [
     ]
 
 def measure_correlation(df: pd.DataFrame):
-    # Take the mean at every timestep
-    # (keeps non-spatial variables the same, averages spatial variables)
-    df_ts = df[["time"] + non_seasonal_vars].groupby("time").mean()
-    
     # Calculate correlation matrix or load an existing one from s3
     corr_matrix_path = f"{S3_BUCKET}/cjense/data/testmodel/correlation_matrix_{RESOLUTION}{SPECIAL_NAME}.parquet"
     try:
         corr_matrix = pd.read_parquet(corr_matrix_path, storage_options=storage_options)
     except:
-        corr_matrix = df_ts.corr(numeric_only=True, method='spearman')
+        corr_matrix = df.corr(numeric_only=True, method='spearman')
         try:
             corr_matrix.to_parquet(corr_matrix_path, storage_options=storage_options)
         except Exception as e:
@@ -42,6 +39,33 @@ def measure_correlation(df: pd.DataFrame):
     plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
     fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_correlation_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
+    plt.clf()
+    plt.close()
+    
+def scatter_matrix(df: pd.DataFrame):
+    # Pairwise scatter plots of every variable, with per-season distributions on the diagonal.
+    # Points are colored by season so seasonal clusters stand out.
+    seasons = {12: "DJF", 1: "DJF", 2: "DJF", 3: "MAM", 4: "MAM", 5: "MAM",
+               6: "JJA", 7: "JJA", 8: "JJA", 9: "SON", 10: "SON", 11: "SON"}
+    plot_df = df.copy()
+    plot_df["Season"] = pd.to_datetime(plot_df.index).month.map(seasons)
+
+    grid = sns.pairplot(plot_df, hue="Season", hue_order=["DJF", "MAM", "JJA", "SON"],
+                        palette=["#1f77b4", "#2ca02c", "#d62728", "#ff7f0e"],
+                        plot_kws=dict(s=8, alpha=0.5, edgecolor="none"),
+                        diag_kind="kde", diag_kws=dict(common_norm=False, fill=True, alpha=0.2),
+                        height=2.2)
+    # Wrap the long variable names so neighboring axis labels don't overlap
+    for ax in grid.axes.flat:
+        ax.set_xlabel(textwrap.fill(ax.get_xlabel(), 20))
+        ax.set_ylabel(textwrap.fill(ax.get_ylabel(), 20))
+    grid.figure.suptitle(f"Scatter matrix ({RESOLUTION} timestep means)", y=1.01)
+
+    plt.savefig('./figures/scatter_matrix.png', dpi=300, bbox_inches='tight')
+    scatter_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_scatter_matrix_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
+    plt.savefig(scatter_path, dpi=300, bbox_inches='tight')
+    # Save figure to S3
+    fs.put(scatter_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_scatter_matrix_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
     plt.clf()
     plt.close()
 
@@ -157,8 +181,15 @@ def main():
     # You can't predict NaN values!
     df = df.dropna(subset=[TARGET_COL])
     
+    # Take the mean at every timestep
+    # (keeps non-spatial variables the same, averages spatial variables)
+    df_ts = df[["time"] + non_seasonal_vars].groupby("time").mean()
+    
     # Make a correlation heatmap
-    measure_correlation(df)
+    measure_correlation(df_ts)
+    
+    # Make a scatter matrix
+    scatter_matrix(df_ts)
 
     # Split data into train and test set by time, keeping time alongside the features and target
     # so downstream scripts don't need to split it separately. A random split would leak: the
