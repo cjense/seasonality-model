@@ -55,26 +55,20 @@ def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
     df = df.sort_values(["x", "y", "time"]).reset_index(drop=True)
     px = df.groupby(["x", "y"])
 
-    # ── Velocity lags (in timesteps) ──
-    steps_30d  = max(1, round(30  / resolution_days))
-    steps_60d  = max(1, round(60  / resolution_days))
-    steps_90d  = max(1, round(90  / resolution_days))
+    # ── Lags (in timesteps) ──
+    lag_steps = {
+        "lag_1step": 1,
+        "lag_30d":   max(1, round(30 / resolution_days)),
+        "lag_60d":   max(1, round(60 / resolution_days)),
+        "lag_90d":   max(1, round(90 / resolution_days)),
+    }
 
-    for feature in non_seasonal_vars:
-        df["lag_1step_"+feature] = px[feature].shift(1)
-        df["lag_30d_"+feature]   = px[feature].shift(steps_30d)
-        df["lag_60d_"+feature]   = px[feature].shift(steps_60d)
-        df["lag_90d_"+feature]   = px[feature].shift(steps_90d)
-
-        # Rolling mean over past ~30 days (excludes current timestep via shift first)
-        df["roll_30d_mean_"+feature] = (
-            px[feature]
-            .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).mean())
-        )
-        df["roll_30d_std_"+feature] = (
-            px[feature]
-            .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).std())
-        )
+    # Only build the lag columns listed in FEATURE_COLS (e.g. "lag_60d_airtemp")
+    for col in FEATURE_COLS:
+        for prefix, steps in lag_steps.items():
+            if col.startswith(prefix + "_"):
+                feature = col[len(prefix) + 1:]
+                df[col] = px[feature].shift(steps)
 
     # ── Time features ──
     t = pd.to_datetime(df["time"])
@@ -123,16 +117,29 @@ def main():
         non_spatial["time"] = pd.to_datetime(non_spatial["time"]).dt.normalize()
         spatial_df["time"] = pd.to_datetime(spatial_df["time"])
 
-        spatial_df = spatial_df.rename(columns={"RU": "meltwater"})
-        non_spatial = non_spatial.resample(RESOLUTION, on="time").mean().reset_index()
-        df = spatial_df.merge(non_spatial, on="time", how="outer")
-        df = df.astype({c: "float32" for c in df.select_dtypes("float64").columns})  # halve memory
+        # Keep only what's needed and downcast to float32 right away to halve memory
+        spatial_df = spatial_df[["time", "x", "y", "RU"]].rename(columns={"RU": "meltwater"})
+        spatial_df["meltwater"] = spatial_df["meltwater"].astype("float32")
+        non_spatial = non_spatial.astype({c: "float32" for c in non_spatial.select_dtypes("float64").columns})
+
+        # Resample both to RESOLUTION with the same bin origin so their timestamps line up.
+        # (Spatial data is daily per pixel; without this the lags would be in days, not RESOLUTION steps.)
+        origin = pd.Timestamp("2000-01-01")
+        spatial_df = (
+            spatial_df
+            .groupby(["x", "y", pd.Grouper(key="time", freq=RESOLUTION, origin=origin)])["meltwater"]
+            .mean()
+            .reset_index()
+        )
+        non_spatial = non_spatial.resample(RESOLUTION, on="time", origin=origin).mean().reset_index()
+
+        # Left merge: every row needs a pixel; non-spatial values are broadcast to all pixels
+        df = spatial_df.merge(non_spatial, on="time", how="left")
+        del spatial_df, non_spatial
 
         # Average timestep length in days for any pandas frequency
         resolution_days = pd.date_range("2000-01-01", periods=101, freq=RESOLUTION).to_series().diff().mean() / pd.Timedelta("1D")
         df = engineer_features(df, resolution_days=resolution_days)
-
-        # TODO: Optimize datatypes (convert to float32) to conserve memory
 
         cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}{SPECIAL_NAME}.parquet"
         print(f"Writing flat parquet to {cache_path} ...")
@@ -158,6 +165,7 @@ def main():
     df = df[["time", *FEATURE_COLS, TARGET_COL]]
     train = df[df["time"].between(PERIOD_START, TRAIN_CUTOFF, inclusive="left")]
     test  = df[df["time"].between(TEST_START, PERIOD_END)]
+    del df
 
     # Save train and test sets for run_xgboost.py and run_shap.py
     train.to_parquet(TRAIN_PATH, storage_options=storage_options, index=False)
