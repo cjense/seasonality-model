@@ -10,7 +10,7 @@ MODEL_SEED    = 42                    # random seed to train model
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
 SPECIAL_NAME  = "_no_vel"             # include a special signifier to the end of filenames
 NOTES         = ("Run with encodings for all feature columns with lags "
-                 "and season sin and cosine. Test 2000-2015 and 2015-2021 with max_depth 5, no area_change_km2. "
+                 "and season sin and cosine. Test 2000-2015 and 2015-2021 with max_depth 5, new variable names, 6D resolution. "
                  "Running on pre-2015 and post-2015 data. "
                  "Calculating SHAP values of all features using GPU.")
 
@@ -21,8 +21,6 @@ FEATURE_COLS = [
     "Air Temperature (C)", "Mélange Area (km^2)",                           # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
     "Basin-Averaged Meltwater Runoff (mmWE/day)",
-    # Predictor var
-    "Discharge (Gt/yr)",         
     # Lag features
     *[f"{lag}_{var}" for var in ["Per-pixel Meltwater Runoff (mmWE/day)",
                                  "Air Temperature (C)", "Mélange Area (km^2)",
