@@ -16,13 +16,18 @@ NOTES         = ("Run with encodings for all feature columns with lags "
 
 FEATURE_COLS = [
     # Spatial vars
-    "meltwater", #"ice_velocity",                                   # TODO: Add ice_elevation, distance_to_terminus
-    # Non-spatial vars (broadcast)
-    "airtemp", "masked_mel_velocity", "melange_area_km2", 
-    "ocean_EN4_TFc", "area_km2",               # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
+    "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",               # TODO: Add ice_elevation, distance_to_terminus
+    # Non-spatial vars
+    "Air Temperature (C)", "Mélange Area (km^2)",                           # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
+    "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
+    "Basin-Averaged Meltwater Runoff (mmWE/day)",
+    # Predictor var
+    "Discharge (Gt/yr)",         
     # Lag features
-    *[f"{lag}_{var}" for var in ["meltwater", "airtemp", "masked_mel_velocity", "melange_area_km2",
-                                 "ocean_EN4_TFc", "area_km2"]
+    *[f"{lag}_{var}" for var in ["Per-pixel Meltwater Runoff (mmWE/day)",
+                                 "Air Temperature (C)", "Mélange Area (km^2)",
+                                 "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
+                                 "Basin-Averaged Meltwater Runoff (mmWE/day)"]
       for lag in ("lag_1step", "lag_60d", "lag_90d")],      # no discharge lags (target)
     # "roll_30d_mean", "roll_30d_std",
     # Time encodings
@@ -32,12 +37,13 @@ FEATURE_COLS = [
     "x", "y",
 ]
 
-NON_SEASONAL_VARS = [
+non_seasonal_vars = [
     # Spatial vars
-    "meltwater", #"ice_velocity",
+    "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",
     # Non-spatial vars
-    "airtemp", "masked_mel_velocity", "melange_area_km2",
-    "ocean_EN4_TFc", "area_km2",
+    "Air Temperature (C)", "Mélange Area (km^2)", 
+    "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
+    "Basin-Averaged Meltwater Runoff (mmWE/day)",
     # Space
     "x", "y",
 ]

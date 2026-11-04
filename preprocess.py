@@ -7,11 +7,12 @@ from config import *
 
 non_seasonal_vars = [
         # Spatial vars
-        "meltwater", #"ice_velocity",
+        "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",
         # Non-spatial vars
-        "airtemp", "masked_mel_velocity", "melange_area_km2", 
-        "ocean_EN4_TFc", "area_km2",
-        # Space
+        "Air Temperature (C)", "Mélange Area (km^2)", 
+        "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
+        "Basin-Averaged Meltwater Runoff (mmWE/day)",
+        # Predictor var
         "Discharge (Gt/yr)",
     ]
 
@@ -118,8 +119,8 @@ def main():
         spatial_df["time"] = pd.to_datetime(spatial_df["time"])
 
         # Keep only what's needed and downcast to float32 right away to halve memory
-        spatial_df = spatial_df[["time", "x", "y", "RU"]].rename(columns={"RU": "meltwater"})
-        spatial_df["meltwater"] = spatial_df["meltwater"].astype("float32")
+        spatial_df = spatial_df[["time", "x", "y", "RU"]].rename(columns={"RU": "Per-pixel Meltwater Runoff (mmWE/day)"})
+        spatial_df["Per-pixel Meltwater Runoff (mmWE/day)"] = spatial_df["Per-pixel Meltwater Runoff (mmWE/day)"].astype("float32")
         non_spatial = non_spatial.astype({c: "float32" for c in non_spatial.select_dtypes("float64").columns})
 
         # Resample both to RESOLUTION with the same bin origin so their timestamps line up.
@@ -127,7 +128,7 @@ def main():
         origin = pd.Timestamp("2000-01-01")
         spatial_df = (
             spatial_df
-            .groupby(["x", "y", pd.Grouper(key="time", freq=RESOLUTION, origin=origin)])["meltwater"]
+            .groupby(["x", "y", pd.Grouper(key="time", freq=RESOLUTION, origin=origin)])["Per-pixel Meltwater Runoff (mmWE/day)"]
             .mean()
             .reset_index()
         )
