@@ -45,7 +45,7 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     )
 
     # Save SHAP values to parquet, keyed by (time, x, y) so they can be joined back to the flat feature parquet
-    shap_save_path = f'{S3_BUCKET}/cjense/data/testmodel/shap_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.parquet'
+    shap_save_path = f'{S3_BUCKET}/cjense/data/testmodel/shap_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.parquet'
     df_shap = pd.DataFrame(shap_vals_combined.values, columns=[f"shap_{c}" for c in FEATURE_COLS])
     df_shap.insert(0, "time", combined_time)
     df_shap.insert(1, "x", combined_features["x"])
@@ -66,12 +66,12 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
                         plot_size=(14, 8))
     plt.title("SHAP values (path-dependent TreeSHAP, GPU)")
     plt.tight_layout()
-    beeswarm_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
+    beeswarm_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
-    plt.savefig('./figures/beeswarm.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'./figures/beeswarm_{PERIOD}.png', dpi=300, bbox_inches='tight')
     plt.savefig(beeswarm_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
-    fs.put(beeswarm_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
+    fs.put(beeswarm_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png')
     plt.clf()
 
     ##### Heatmap plot #####
@@ -101,14 +101,14 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     ax.set_xticks(tick_pos)
     ax.set_xticklabels(tick_labels, rotation=0)
     ax.set_xlabel("Year")
-    ax.set_title("Monthly mean SHAP values over all pixels (path-dependent TreeSHAP, GPU)")
+    ax.set_title("Mean SHAP values over all pixels (path-dependent TreeSHAP, GPU)")
 
-    heatmap_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
+    heatmap_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
-    plt.savefig('./figures/heatmap.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'./figures/heatmap_{PERIOD}.png', dpi=300, bbox_inches='tight')
     plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
-    fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
+    fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png')
     
     return shap_vals_combined
 
