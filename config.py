@@ -4,7 +4,7 @@ import s3fs
 ########## CONFIG ##########
 GLACIER_NAME  = "zach"
 S3_BUCKET     = "s3://gaia"
-RESOLUTION    = "MS"                  # MS = monthly on the first of the month
+RESOLUTION    = "6D"                  # MS = monthly on the first of the month
 CACHE_PARQUET = True                 # write flat df to S3 after extraction
 MODEL_SEED    = 42                    # random seed to train model
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)

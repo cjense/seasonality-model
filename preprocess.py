@@ -30,7 +30,7 @@ def measure_correlation(df: pd.DataFrame):
             print(f"Warning: could not save correlation matrix to S3: {e}")
     
     plt.figure(figsize=(16, 6))
-    heatmap = sns.heatmap(corr_matrix, vmin=-1, vmax=1, annot=True)
+    heatmap = sns.heatmap(corr_matrix, vmin=-1, vmax=1, annot=True, cmap='RdBu')
     heatmap.set_title('Correlation Heatmap')
     plt.tight_layout()
     
