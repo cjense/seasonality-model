@@ -11,7 +11,7 @@ BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plottin
 GEOSHAP_MAX_ROWS    = 500_000         # GeoShapley row budget: whole timesteps (all pixels) are sampled up to this many rows
 SPECIAL_NAME  = "_no_vel"             # include a special signifier to the end of filenames
 NOTES         = ("Run with encodings for all feature columns with lags "
-                 "and season sin and cosine. Test 2000-2015 and 2015-2021 with max_depth 5, new variable names, 6D resolution. "
+                 "and season sin and cosine. Test 2000-2015 and 2015-2025 with max_depth 5, new variable names, 6D resolution. "
                  "Running on pre-2015 and post-2015 data. "
                  "Calculating SHAP values of all features using GPU.")
 
@@ -56,7 +56,7 @@ TARGET_COL = "Discharge (Gt/yr)"
 PERIODS = {
     "full":     {"start": "2000-01-01", "train_cutoff": "2018-01-01", "end": "2020-12-31"},
     "pre2015":  {"start": "2000-01-01", "train_cutoff": "2012-01-01", "end": "2014-12-31"},
-    "post2015": {"start": "2015-01-01", "train_cutoff": "2018-06-01", "end": "2020-12-31"},
+    "post2015": {"start": "2015-01-01", "train_cutoff": "2022-06-01", "end": "2025-12-31"},
 }
 PERIOD = os.environ.get("PERIOD", "full")
 if PERIOD not in PERIODS:
