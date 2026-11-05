@@ -78,9 +78,6 @@ jobs:
                      ACL="public-read", ContentType="image/png")
           PY
 
-      - name: Set up CML
-        uses: iterative/setup-cml@v2
-
       - name: Report results
         env:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -88,12 +85,20 @@ jobs:
           FIG_URL="${S3_ENDPOINT_URL}/gaia/cjense/ci-figures/${GITHUB_RUN_ID}"
           : > modelresults.md
           echo "![](${FIG_URL}/correlation.png)" >> modelresults.md
-          echo "![](${FIG_URL}/scatter_matrix.png)" >> modelresults.md
-          for PERIOD in $PERIODS; do
-            cat "modelresults_${PERIOD}.md" >> modelresults.md
-            echo "### Figures (${PERIOD})" >> modelresults.md
-            echo "![](${FIG_URL}/xgboost_result_${PERIOD}.png)" >> modelresults.md
-            echo "![](${FIG_URL}/beeswarm_${PERIOD}.png)" >> modelresults.md
-            echo "![](${FIG_URL}/heatmap_${PERIOD}.png)" >> modelresults.md
-          done
-          cml comment create --no-publish modelresults.md
+          echo "![](${FIG_URL}/xgboost_result.png)" >> modelresults.md
+          echo "![](${FIG_URL}/beeswarm.png)" >> modelresults.md
+          echo "![](${FIG_URL}/heatmap.png)" >> modelresults.md
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            curl -s -X POST \
+              -H "Authorization: token ${REPO_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+              -d "{\"body\": $(cat modelresults.md | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}"
+          else
+            curl -s -X POST \
+              -H "Authorization: token ${REPO_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/commits/${GITHUB_SHA}/comments" \
+              -d "{\"body\": $(cat modelresults.md | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}"
+          fi
