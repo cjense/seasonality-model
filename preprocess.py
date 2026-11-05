@@ -1,3 +1,4 @@
+import textwrap
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -7,32 +8,29 @@ from config import *
 
 non_seasonal_vars = [
         # Spatial vars
-        "meltwater", #"ice_velocity",
+        "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",
         # Non-spatial vars
-        "airtemp", "masked_mel_velocity", "melange_area_km2", 
-        "ocean_EN4_TFc", "area_km2", "area_change_km2",
-        # Space
+        "Air Temperature (C)", "Mélange Area (km^2)", 
+        "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
+        "Basin-Averaged Meltwater Runoff (mmWE/day)",
+        # Predictor var
         "Discharge (Gt/yr)",
     ]
 
 def measure_correlation(df: pd.DataFrame):
-    # Take the mean at every timestep
-    # (keeps non-spatial variables the same, averages spatial variables)
-    df_ts = df[["time"] + non_seasonal_vars].groupby("time").mean()
-    
     # Calculate correlation matrix or load an existing one from s3
     corr_matrix_path = f"{S3_BUCKET}/cjense/data/testmodel/correlation_matrix_{RESOLUTION}{SPECIAL_NAME}.parquet"
     try:
         corr_matrix = pd.read_parquet(corr_matrix_path, storage_options=storage_options)
     except:
-        corr_matrix = df_ts.corr(numeric_only=True, method='spearman')
+        corr_matrix = df.corr(numeric_only=True, method='spearman')
         try:
             corr_matrix.to_parquet(corr_matrix_path, storage_options=storage_options)
         except Exception as e:
             print(f"Warning: could not save correlation matrix to S3: {e}")
     
     plt.figure(figsize=(16, 6))
-    heatmap = sns.heatmap(corr_matrix, vmin=-1, vmax=1, annot=True)
+    heatmap = sns.heatmap(corr_matrix, vmin=-1, vmax=1, annot=True, cmap='RdBu')
     heatmap.set_title('Correlation Heatmap')
     plt.tight_layout()
     
@@ -41,6 +39,33 @@ def measure_correlation(df: pd.DataFrame):
     plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
     fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_correlation_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
+    plt.clf()
+    plt.close()
+    
+def scatter_matrix(df: pd.DataFrame):
+    # Pairwise scatter plots of every variable, with per-season distributions on the diagonal.
+    # Points are colored by season so seasonal clusters stand out.
+    seasons = {12: "DJF", 1: "DJF", 2: "DJF", 3: "MAM", 4: "MAM", 5: "MAM",
+               6: "JJA", 7: "JJA", 8: "JJA", 9: "SON", 10: "SON", 11: "SON"}
+    plot_df = df.copy()
+    plot_df["Season"] = pd.to_datetime(plot_df.index).month.map(seasons)
+
+    grid = sns.pairplot(plot_df, hue="Season", hue_order=["DJF", "MAM", "JJA", "SON"],
+                        palette=["#1f77b4", "#2ca02c", "#d62728", "#ff7f0e"],
+                        plot_kws=dict(s=8, alpha=0.5, edgecolor="none"),
+                        diag_kind="kde", diag_kws=dict(common_norm=False, fill=True, alpha=0.2),
+                        height=2.2)
+    # Wrap the long variable names so neighboring axis labels don't overlap
+    for ax in grid.axes.flat:
+        ax.set_xlabel(textwrap.fill(ax.get_xlabel(), 20))
+        ax.set_ylabel(textwrap.fill(ax.get_ylabel(), 20))
+    grid.figure.suptitle(f"Scatter matrix ({RESOLUTION} timestep means)", y=1.01)
+
+    plt.savefig('./figures/scatter_matrix.png', dpi=300, bbox_inches='tight')
+    scatter_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_scatter_matrix_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
+    plt.savefig(scatter_path, dpi=300, bbox_inches='tight')
+    # Save figure to S3
+    fs.put(scatter_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_scatter_matrix_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
     plt.clf()
     plt.close()
 
@@ -55,26 +80,20 @@ def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
     df = df.sort_values(["x", "y", "time"]).reset_index(drop=True)
     px = df.groupby(["x", "y"])
 
-    # ── Velocity lags (in timesteps) ──
-    steps_30d  = max(1, round(30  / resolution_days))
-    steps_60d  = max(1, round(60  / resolution_days))
-    steps_90d  = max(1, round(90  / resolution_days))
+    # ── Lags (in timesteps) ──
+    lag_steps = {
+        "lag_1step": 1,
+        "lag_30d":   max(1, round(30 / resolution_days)),
+        "lag_60d":   max(1, round(60 / resolution_days)),
+        "lag_90d":   max(1, round(90 / resolution_days)),
+    }
 
-    for feature in non_seasonal_vars:
-        df["lag_1step_"+feature] = px[feature].shift(1)
-        df["lag_30d_"+feature]   = px[feature].shift(steps_30d)
-        df["lag_60d_"+feature]   = px[feature].shift(steps_60d)
-        df["lag_90d_"+feature]   = px[feature].shift(steps_90d)
-
-        # Rolling mean over past ~30 days (excludes current timestep via shift first)
-        df["roll_30d_mean_"+feature] = (
-            px[feature]
-            .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).mean())
-        )
-        df["roll_30d_std_"+feature] = (
-            px[feature]
-            .transform(lambda s: s.shift(1).rolling(steps_30d, min_periods=1).std())
-        )
+    # Only build the lag columns listed in FEATURE_COLS (e.g. "lag_60d_airtemp")
+    for col in FEATURE_COLS:
+        for prefix, steps in lag_steps.items():
+            if col.startswith(prefix + "_"):
+                feature = col[len(prefix) + 1:]
+                df[col] = px[feature].shift(steps)
 
     # ── Time features ──
     t = pd.to_datetime(df["time"])
@@ -92,8 +111,9 @@ def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
     return df
 
 def main():
-    # First step of the pipeline: start a fresh modelresults.md for this run
-    open("modelresults.md", "w").close()
+    # First step of the pipeline: start a fresh results file for this period
+    with open(RESULTS_PATH, "w") as outfile:
+        outfile.write(f"## Period: {PERIOD} (train {PERIOD_START} to {TRAIN_CUTOFF}, test {TEST_START} to {PERIOD_END})\n\n")
 
     # Look for existing file of the correct resolution
     cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}{SPECIAL_NAME}.parquet"
@@ -103,7 +123,7 @@ def main():
         print("Found cached file.")
 
         # Record data size and location
-        with open("modelresults.md", 'a') as outfile:
+        with open(RESULTS_PATH, 'a') as outfile:
             outfile.write("### Data\n")
             outfile.write(f"Loaded from cache at {cache_path}: {len(df):,} rows, {df.memory_usage(deep=True).sum() / 1e9:.2f} GB\n\n")
             df.head().to_markdown(buf=outfile)
@@ -114,7 +134,7 @@ def main():
         
         # Load spatial and non-spatial variables.
         # This method conserves memory by loading the non-spatial variables lazily and merging once
-        spatial_df = pd.read_parquet(f's3://gaia/cjense/data/mar/basin_meltwater_regridded_daily_ZI_2000_2025_{RESOLUTION}.parquet', storage_options=storage_options)
+        spatial_df = pd.read_parquet(f's3://gaia/cjense/data/mar/basin_meltwater_regridded_ZI_2000_2025_{RESOLUTION}.parquet', storage_options=storage_options)
         non_spatial = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet", storage_options=storage_options)
 
         spatial_df = spatial_df.reset_index()
@@ -122,23 +142,36 @@ def main():
         non_spatial["time"] = pd.to_datetime(non_spatial["time"]).dt.normalize()
         spatial_df["time"] = pd.to_datetime(spatial_df["time"])
 
-        spatial_df = spatial_df.rename(columns={"RU": "meltwater"})
-        non_spatial = non_spatial.resample(RESOLUTION, on="time").mean().reset_index()
-        df = spatial_df.merge(non_spatial, on="time", how="outer")
-        df = df.astype({c: "float32" for c in df.select_dtypes("float64").columns})  # halve memory
+        # Keep only what's needed and downcast to float32 right away to halve memory
+        spatial_df = spatial_df[["time", "x", "y", "RU"]].rename(columns={"RU": "Per-pixel Meltwater Runoff (mmWE/day)"})
+        spatial_df["Per-pixel Meltwater Runoff (mmWE/day)"] = spatial_df["Per-pixel Meltwater Runoff (mmWE/day)"].astype("float32")
+        non_spatial = non_spatial.astype({c: "float32" for c in non_spatial.select_dtypes("float64").columns})
+
+        # Resample both to RESOLUTION with the same bin origin so their timestamps line up.
+        # (Spatial data is daily per pixel; without this the lags would be in days, not RESOLUTION steps.)
+        origin = pd.Timestamp("2000-01-01")
+        spatial_df = (
+            spatial_df
+            .groupby(["x", "y", pd.Grouper(key="time", freq=RESOLUTION, origin=origin)])["Per-pixel Meltwater Runoff (mmWE/day)"]
+            .mean()
+            .reset_index()
+        )
+        non_spatial = non_spatial.resample(RESOLUTION, on="time", origin=origin).mean().reset_index()
+
+        # Left merge: every row needs a pixel; non-spatial values are broadcast to all pixels
+        df = spatial_df.merge(non_spatial, on="time", how="left")
+        del spatial_df, non_spatial
 
         # Average timestep length in days for any pandas frequency
         resolution_days = pd.date_range("2000-01-01", periods=101, freq=RESOLUTION).to_series().diff().mean() / pd.Timedelta("1D")
         df = engineer_features(df, resolution_days=resolution_days)
-
-        # TODO: Optimize datatypes (convert to float32) to conserve memory
 
         cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}{SPECIAL_NAME}.parquet"
         print(f"Writing flat parquet to {cache_path} ...")
         df.to_parquet(cache_path, storage_options=storage_options, index=False)
         
         # Record making cached file
-        with open("modelresults.md", 'a') as outfile:
+        with open(RESULTS_PATH, 'a') as outfile:
             outfile.write("### Data\n")
             outfile.write(f"No cached file found. Made new file at {RESOLUTION} resolution and uploaded it to s3: {cache_path}.\n\n")
             df.head().to_markdown(buf=outfile)
@@ -148,15 +181,23 @@ def main():
     # You can't predict NaN values!
     df = df.dropna(subset=[TARGET_COL])
     
+    # Take the mean at every timestep
+    # (keeps non-spatial variables the same, averages spatial variables)
+    df_ts = df[["time"] + non_seasonal_vars].groupby("time").mean()
+    
     # Make a correlation heatmap
-    measure_correlation(df)
+    measure_correlation(df_ts)
+    
+    # Make a scatter matrix
+    scatter_matrix(df_ts)
 
     # Split data into train and test set by time, keeping time alongside the features and target
     # so downstream scripts don't need to split it separately. A random split would leak: the
     # target is the same for every pixel at a timestep, so test timesteps would also appear in train.
     df = df[["time", *FEATURE_COLS, TARGET_COL]]
-    train = df[df["time"] < TRAIN_CUTOFF]
-    test  = df[df["time"] >= TEST_START]
+    train = df[df["time"].between(PERIOD_START, TRAIN_CUTOFF, inclusive="left")]
+    test  = df[df["time"].between(TEST_START, PERIOD_END)]
+    del df
 
     # Save train and test sets for run_xgboost.py and run_shap.py
     train.to_parquet(TRAIN_PATH, storage_options=storage_options, index=False)
