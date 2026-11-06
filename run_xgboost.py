@@ -8,7 +8,11 @@ from hyperopt import hp, tpe, fmin, STATUS_OK, Trials
 from config import *
 
 
-def train_model(dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.Booster:
+def train_model(dcv: xgb.DMatrix, dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.Booster:
+    '''
+    Tune hyperparameters with hyperopt + k-fold CV on `dcv`, then retrain on `dtrain`.
+    `dcv` must be a plain DMatrix: xgb.cv slices rows into folds, which QuantileDMatrix doesn't support.
+    '''
     space = {
         'max_depth':        hp.quniform('max_depth', 3, 10, 1),
         'eta':              hp.loguniform('eta', -5, -1),
@@ -32,7 +36,7 @@ def train_model(dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.
         }
         cv_result = xgb.cv(
             params,
-            dtrain,
+            dcv,
             num_boost_round=1000,
             nfold=5,
             early_stopping_rounds=50,
@@ -142,8 +146,12 @@ def main():
     dtrain = xgb.QuantileDMatrix(train[FEATURE_COLS], label=train[TARGET_COL])
     dtest = xgb.QuantileDMatrix(test[FEATURE_COLS], label=test[TARGET_COL], ref=dtrain)
 
+    # Plain DMatrix for hyperparameter CV (xgb.cv doesn't support QuantileDMatrix)
+    dcv = xgb.DMatrix(train[FEATURE_COLS], label=train[TARGET_COL])
+
     print("Training new model...")
-    model = train_model(dtrain, dtest)
+    model = train_model(dcv, dtrain, dtest)
+    del dcv
 
     # Calculate model metrics
     metrics = evaluate(model, dtest, train)
