@@ -35,7 +35,15 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
         feature_perturbation="tree_path_dependent",
     )
 
-    shap_vals_raw = explainer.shap_values(combined_features[FEATURE_COLS])
+    # Compute in row chunks: one GPU call over all rows (~100M+ at 6D) exceeds CUDA launch limits
+    # (cudaErrorInvalidConfiguration in shap.cu). Results are written into a preallocated float32 array.
+    X_all = combined_features[FEATURE_COLS]
+    n_rows = len(X_all)
+    shap_vals_raw = np.empty((n_rows, len(FEATURE_COLS)), dtype=np.float32)
+    for start in range(0, n_rows, SHAP_CHUNK_ROWS):
+        stop = min(start + SHAP_CHUNK_ROWS, n_rows)
+        shap_vals_raw[start:stop] = explainer.shap_values(X_all.iloc[start:stop])
+        print(f"  SHAP rows {stop:,}/{n_rows:,}", flush=True)
 
     shap_vals_combined = shap.Explanation(
         values=shap_vals_raw,

@@ -47,7 +47,8 @@ def time_block_folds(times: pd.Series, nfold: int, gap_days: int) -> list[tuple[
 def train_model(train: pd.DataFrame, dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.Booster:
     '''
     Tune tree hyperparameters with hyperopt on a subset of training timesteps using time-blocked CV
-    (folds trained in parallel, one GPU each), then retrain on the full `dtrain` with a lower learning rate.
+    (folds trained in parallel, one GPU each), pick the number of rounds by early stopping on the end of the
+    training period, then refit on the full `dtrain` with a lower learning rate. The test set is never used to fit.
     '''
     # 1. Subsample whole timesteps (all pixels at a timestep are highly correlated, so this loses little)
     rng = np.random.default_rng(MODEL_SEED)
@@ -71,11 +72,20 @@ def train_model(train: pd.DataFrame, dtrain: xgb.QuantileDMatrix, dtest: xgb.Qua
     print(f"Tuning on {len(keep)}/{len(all_times)} timesteps ({len(tune_df):,} rows), "
           f"{TUNE_NFOLD} time-block folds on {n_gpus} GPU(s), {TUNE_MAX_EVALS} trials")
 
+    # The target is identical for every pixel at a timestep, so the number of independent samples is
+    # the number of timesteps, not rows. min_child_weight, reg_lambda and gamma all scale with row
+    # count (hessian = 1 per row for squared error), so they're tuned in units of "timesteps' worth
+    # of pixels" and multiplied by pixels-per-timestep. E.g. min_child_timesteps=10 forces every leaf
+    # to contain at least ~10 timesteps of data, so a leaf can't memorize a single timestep.
+    pixels_per_timestep = len(train) / len(all_times)
+
     space = {
-        'max_depth':        hp.quniform('max_depth', 3, 10, 1),
-        'subsample':        hp.uniform('subsample', 0.5, 1),
-        'colsample_bytree': hp.uniform('colsample_bytree', 0.5, 1),
-        'min_child_weight': hp.quniform('min_child_weight', 5, 30, 1),
+        'max_depth':           hp.quniform('max_depth', 2, 6, 1),
+        'subsample':           hp.uniform('subsample', 0.5, 1),
+        'colsample_bytree':    hp.uniform('colsample_bytree', 0.3, 1),
+        'min_child_timesteps': hp.loguniform('min_child_timesteps', np.log(1), np.log(100)),
+        'lambda_timesteps':    hp.loguniform('lambda_timesteps', np.log(0.01), np.log(100)),
+        'gamma_timesteps':     hp.loguniform('gamma_timesteps', np.log(1e-3), np.log(10)),
     }
 
     def tree_params(hyperparams, eta):
@@ -87,7 +97,9 @@ def train_model(train: pd.DataFrame, dtrain: xgb.QuantileDMatrix, dtest: xgb.Qua
             "max_depth":        int(hyperparams['max_depth']),
             "subsample":        hyperparams['subsample'],
             "colsample_bytree": hyperparams['colsample_bytree'],
-            "min_child_weight": int(hyperparams['min_child_weight']),
+            "min_child_weight": hyperparams['min_child_timesteps'] * pixels_per_timestep,
+            "reg_lambda":       hyperparams['lambda_timesteps'] * pixels_per_timestep,
+            "gamma":            hyperparams['gamma_timesteps'] * pixels_per_timestep,
             "seed":             MODEL_SEED,
         }
 
@@ -123,6 +135,28 @@ def train_model(train: pd.DataFrame, dtrain: xgb.QuantileDMatrix, dtest: xgb.Qua
 
     best_params = {**tree_params(best, FINAL_ETA), "device": "cuda", "eval_metric": ["rmse", "mae", "mape"]}
 
+    # Pick the number of boosting rounds WITHOUT looking at the test set: hold out the last
+    # FINAL_VAL_FRAC of training timesteps (with a gap), early-stop on it, then refit on all
+    # training data for that many rounds.
+    times_sorted = np.sort(all_times)
+    val_start = pd.Timestamp(times_sorted[int(len(times_sorted) * (1 - FINAL_VAL_FRAC))])
+    fit_mask = (train["time"] < val_start - pd.Timedelta(days=TUNE_GAP_DAYS)).to_numpy()
+    val_mask = (train["time"] >= val_start).to_numpy()
+    dfit = xgb.QuantileDMatrix(train.loc[fit_mask, FEATURE_COLS], label=train.loc[fit_mask, TARGET_COL])
+    dval = xgb.QuantileDMatrix(train.loc[val_mask, FEATURE_COLS], label=train.loc[val_mask, TARGET_COL], ref=dfit)
+    print(f"Choosing number of rounds: early stopping on training timesteps from {val_start.date()} onward")
+    es_model = xgb.train(
+        best_params,
+        dfit,
+        num_boost_round=FINAL_MAX_ROUNDS,
+        evals=[(dfit, "fit"), (dval, "val")],     # early stopping uses the last eval set (val)
+        early_stopping_rounds=FINAL_EARLY_STOP,
+        verbose_eval=100,
+    )
+    n_rounds = es_model.best_iteration + 1
+    val_rmse = es_model.best_score
+    del dfit, dval, es_model
+
     with open(RESULTS_PATH, 'a') as outfile:
         outfile.write("### Hyperparameter tuning\n")
         outfile.write(f"- {TUNE_MAX_EVALS} hyperopt trials, {TUNE_NFOLD} time-block CV folds ({TUNE_GAP_DAYS}-day gap), "
@@ -131,15 +165,18 @@ def train_model(train: pd.DataFrame, dtrain: xgb.QuantileDMatrix, dtest: xgb.Qua
         outfile.write(f"- Best CV RMSE: {trials.best_trial['result']['loss']:.4f} Gt/yr\n")
         outfile.write(f"- Best params: max_depth={best_params['max_depth']}, subsample={best_params['subsample']:.3f}, "
                       f"colsample_bytree={best_params['colsample_bytree']:.3f}, "
-                      f"min_child_weight={best_params['min_child_weight']}; final eta={FINAL_ETA}\n\n")
+                      f"min_child_timesteps={best['min_child_timesteps']:.2f}, "
+                      f"lambda_timesteps={best['lambda_timesteps']:.3f}, gamma_timesteps={best['gamma_timesteps']:.4f} "
+                      f"(x {pixels_per_timestep:,.0f} pixels/timestep); final eta={FINAL_ETA}\n")
+        outfile.write(f"- Rounds: {n_rounds} (early stopping on training timesteps from {val_start.date()}, "
+                      f"val RMSE {val_rmse:.4f} Gt/yr)\n\n")
 
-    # Retrain on full dtrain with the best hyperparams and a lower learning rate
+    # Refit on all training data for the chosen number of rounds; test is monitored only, never used to stop
     model = xgb.train(
         best_params,
         dtrain,
-        num_boost_round=FINAL_MAX_ROUNDS,
+        num_boost_round=n_rounds,
         evals=[(dtrain, "train"), (dtest, "test")],
-        early_stopping_rounds=FINAL_EARLY_STOP,
         verbose_eval=100,
     )
     return model

@@ -8,6 +8,7 @@ RESOLUTION    = "6D"                  # MS = monthly on the first of the month
 CACHE_PARQUET = True                 # write flat df to S3 after extraction
 MODEL_SEED    = 42                    # random seed to train model
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
+SHAP_CHUNK_ROWS     = 2_000_000       # rows per GPU TreeSHAP call (too many at once -> cudaErrorInvalidConfiguration)
 GEOSHAP_MAX_ROWS    = 500_000         # GeoShapley row budget: whole timesteps (all pixels) are sampled up to this many rows
 SPECIAL_NAME  = "_new_discharge"             # include a special signifier to the end of filenames
 NOTES         = ("Run with encodings for all feature columns with lags "
@@ -62,6 +63,7 @@ TUNE_EARLY_STOP   = 20
 FINAL_ETA         = 0.03    # lower learning rate for the final fit on the full training set
 FINAL_MAX_ROUNDS  = 5000
 FINAL_EARLY_STOP  = 100
+FINAL_VAL_FRAC    = 0.2     # last fraction of training timesteps used to early-stop the final fit (test set is never used)
 
 ########## Time periods ##########
 # Each period is trained and evaluated separately: train on [start, train_cutoff),
