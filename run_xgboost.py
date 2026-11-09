@@ -1,3 +1,8 @@
+import os
+import subprocess
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 import pandas as pd
 import xgboost as xgb
@@ -8,66 +13,134 @@ from hyperopt import hp, tpe, fmin, STATUS_OK, Trials
 from config import *
 
 
-def train_model(dcv: xgb.DMatrix, dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.Booster:
+def n_visible_gpus() -> int:
+    '''Number of GPUs this job can use: N_GPUS override, else CUDA_VISIBLE_DEVICES (set by Slurm), else nvidia-smi.'''
+    if os.environ.get("N_GPUS"):
+        return int(os.environ["N_GPUS"])
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible:
+        return len([d for d in visible.split(",") if d.strip()])
+    try:
+        out = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True, check=True).stdout
+        return max(1, sum(line.startswith("GPU ") for line in out.splitlines()))
+    except Exception:
+        return 1
+
+
+def time_block_folds(times: pd.Series, nfold: int, gap_days: int) -> list[tuple[np.ndarray, np.ndarray]]:
     '''
-    Tune hyperparameters with hyperopt + k-fold CV on `dcv`, then retrain on `dtrain`.
-    `dcv` must be a plain DMatrix: xgb.cv slices rows into folds, which QuantileDMatrix doesn't support.
+    Split rows into `nfold` contiguous blocks of timesteps. Each block is the validation set once;
+    training rows within `gap_days` of the block are dropped so lag features / autocorrelation
+    can't leak validation-period information into training.
     '''
+    times = times.reset_index(drop=True)
+    gap = pd.Timedelta(days=gap_days)
+    folds = []
+    for block in np.array_split(np.sort(times.unique()), nfold):
+        start, end = pd.Timestamp(block[0]), pd.Timestamp(block[-1])
+        val = times.between(start, end).to_numpy()
+        trn = ((times < start - gap) | (times > end + gap)).to_numpy()
+        folds.append((np.flatnonzero(trn), np.flatnonzero(val)))
+    return folds
+
+
+def train_model(train: pd.DataFrame, dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.Booster:
+    '''
+    Tune tree hyperparameters with hyperopt on a subset of training timesteps using time-blocked CV
+    (folds trained in parallel, one GPU each), then retrain on the full `dtrain` with a lower learning rate.
+    '''
+    # 1. Subsample whole timesteps (all pixels at a timestep are highly correlated, so this loses little)
+    rng = np.random.default_rng(MODEL_SEED)
+    all_times = train["time"].unique()
+    n_keep = max(TUNE_NFOLD * 2, int(round(len(all_times) * TUNE_TIME_FRAC)))
+    keep = rng.choice(all_times, size=min(n_keep, len(all_times)), replace=False)
+    tune_df = train[train["time"].isin(keep)].reset_index(drop=True)
+
+    # 4. Time-blocked folds, built once and reused by every trial
+    folds = time_block_folds(tune_df["time"], TUNE_NFOLD, TUNE_GAP_DAYS)
+    X, y = tune_df[FEATURE_COLS], tune_df[TARGET_COL]
+    fold_data = []
+    for trn_idx, val_idx in folds:
+        dtr = xgb.QuantileDMatrix(X.iloc[trn_idx], label=y.iloc[trn_idx])
+        dval = xgb.QuantileDMatrix(X.iloc[val_idx], label=y.iloc[val_idx], ref=dtr)
+        fold_data.append((dtr, dval))
+
+    # One worker thread per GPU; each runs its assigned folds in turn
+    n_gpus = min(n_visible_gpus(), TUNE_NFOLD)
+    gpu_folds = [[k for k in range(TUNE_NFOLD) if k % n_gpus == g] for g in range(n_gpus)]
+    print(f"Tuning on {len(keep)}/{len(all_times)} timesteps ({len(tune_df):,} rows), "
+          f"{TUNE_NFOLD} time-block folds on {n_gpus} GPU(s), {TUNE_MAX_EVALS} trials")
+
     space = {
         'max_depth':        hp.quniform('max_depth', 3, 10, 1),
-        'eta':              hp.loguniform('eta', -5, -1),
         'subsample':        hp.uniform('subsample', 0.5, 1),
         'colsample_bytree': hp.uniform('colsample_bytree', 0.5, 1),
         'min_child_weight': hp.quniform('min_child_weight', 5, 30, 1),
     }
 
-    def objective(hyperparams):
-        params = {
+    def tree_params(hyperparams, eta):
+        return {
             "tree_method":      "hist",
-            "device":           "cuda",
             "objective":        "reg:squarederror",
             "eval_metric":      "rmse",
+            "eta":              eta,
             "max_depth":        int(hyperparams['max_depth']),
-            "eta":              hyperparams['eta'],
             "subsample":        hyperparams['subsample'],
             "colsample_bytree": hyperparams['colsample_bytree'],
             "min_child_weight": int(hyperparams['min_child_weight']),
             "seed":             MODEL_SEED,
         }
-        cv_result = xgb.cv(
-            params,
-            dcv,
-            num_boost_round=1000,
-            nfold=5,
-            early_stopping_rounds=50,
-            verbose_eval=False,
-        )
-        best_rmse = cv_result['test-rmse-mean'].min()
-        return {'loss': best_rmse, 'status': STATUS_OK}
 
+    def run_folds_on_gpu(params, gpu, fold_ids):
+        results = []
+        for k in fold_ids:
+            dtr, dval = fold_data[k]
+            bst = xgb.train(
+                {**params, "device": f"cuda:{gpu}"},
+                dtr,
+                num_boost_round=TUNE_MAX_ROUNDS,
+                evals=[(dval, "val")],
+                early_stopping_rounds=TUNE_EARLY_STOP,
+                verbose_eval=False,
+            )
+            results.append((bst.best_score, bst.best_iteration))
+        return results
+
+    def objective(hyperparams):
+        params = tree_params(hyperparams, TUNE_ETA)
+        with ThreadPoolExecutor(max_workers=n_gpus) as pool:
+            futures = [pool.submit(run_folds_on_gpu, params, g, ids) for g, ids in enumerate(gpu_folds)]
+            results = [r for f in futures for r in f.result()]
+        rmses, iters = zip(*results)
+        return {'loss': float(np.mean(rmses)), 'status': STATUS_OK, 'best_iterations': list(iters)}
+
+    t0 = time.time()
     trials = Trials()
-    best = fmin(objective, space, algo=tpe.suggest, max_evals=50, trials=trials)
+    best = fmin(objective, space, algo=tpe.suggest, max_evals=TUNE_MAX_EVALS, trials=trials,
+                rstate=np.random.default_rng(MODEL_SEED))
+    tune_minutes = (time.time() - t0) / 60
+    del fold_data
 
-    # Retrain on full dtrain with the best hyperparams found
-    best_params = {
-        "tree_method":      "hist",
-        "device":           "cuda",
-        "objective":        "reg:squarederror",
-        "eval_metric":      ["rmse", "mae", "mape"],
-        "max_depth":        int(best['max_depth']),
-        "eta":              best['eta'],
-        "subsample":        best['subsample'],
-        "colsample_bytree": best['colsample_bytree'],
-        "min_child_weight": int(best['min_child_weight']),
-        "seed":             MODEL_SEED,
-    }
+    best_params = {**tree_params(best, FINAL_ETA), "device": "cuda", "eval_metric": ["rmse", "mae", "mape"]}
+
+    with open(RESULTS_PATH, 'a') as outfile:
+        outfile.write("### Hyperparameter tuning\n")
+        outfile.write(f"- {TUNE_MAX_EVALS} hyperopt trials, {TUNE_NFOLD} time-block CV folds ({TUNE_GAP_DAYS}-day gap), "
+                      f"{len(keep)}/{len(all_times)} training timesteps, eta={TUNE_ETA}, {n_gpus} GPU(s), "
+                      f"{tune_minutes:.1f} min\n")
+        outfile.write(f"- Best CV RMSE: {trials.best_trial['result']['loss']:.4f} Gt/yr\n")
+        outfile.write(f"- Best params: max_depth={best_params['max_depth']}, subsample={best_params['subsample']:.3f}, "
+                      f"colsample_bytree={best_params['colsample_bytree']:.3f}, "
+                      f"min_child_weight={best_params['min_child_weight']}; final eta={FINAL_ETA}\n\n")
+
+    # Retrain on full dtrain with the best hyperparams and a lower learning rate
     model = xgb.train(
         best_params,
         dtrain,
-        num_boost_round=1000,
+        num_boost_round=FINAL_MAX_ROUNDS,
         evals=[(dtrain, "train"), (dtest, "test")],
-        early_stopping_rounds=50,
-        verbose_eval=25,
+        early_stopping_rounds=FINAL_EARLY_STOP,
+        verbose_eval=100,
     )
     return model
 
@@ -146,12 +219,8 @@ def main():
     dtrain = xgb.QuantileDMatrix(train[FEATURE_COLS], label=train[TARGET_COL])
     dtest = xgb.QuantileDMatrix(test[FEATURE_COLS], label=test[TARGET_COL], ref=dtrain)
 
-    # Plain DMatrix for hyperparameter CV (xgb.cv doesn't support QuantileDMatrix)
-    dcv = xgb.DMatrix(train[FEATURE_COLS], label=train[TARGET_COL])
-
     print("Training new model...")
-    model = train_model(dcv, dtrain, dtest)
-    del dcv
+    model = train_model(train, dtrain, dtest)
 
     # Calculate model metrics
     metrics = evaluate(model, dtest, train)

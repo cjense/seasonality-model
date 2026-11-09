@@ -49,6 +49,20 @@ non_seasonal_vars = [
 
 TARGET_COL = "Discharge (Gt/yr)"
 
+########## Hyperparameter tuning ##########
+# Tuning runs on a random subset of training timesteps with time-blocked CV folds,
+# one GPU per fold (folds are spread over all GPUs in CUDA_VISIBLE_DEVICES, or N_GPUS if set).
+TUNE_TIME_FRAC    = 0.25    # fraction of training timesteps (all pixels kept) used for tuning
+TUNE_NFOLD        = 3       # contiguous time-block folds -> up to this many GPUs used in parallel
+TUNE_GAP_DAYS     = 90      # purge training rows within this many days of each validation block (longest lag is 90d)
+TUNE_MAX_EVALS    = 30      # hyperopt trials
+TUNE_ETA          = 0.1     # fixed learning rate during tuning (keeps rounds low)
+TUNE_MAX_ROUNDS   = 300
+TUNE_EARLY_STOP   = 20
+FINAL_ETA         = 0.03    # lower learning rate for the final fit on the full training set
+FINAL_MAX_ROUNDS  = 5000
+FINAL_EARLY_STOP  = 100
+
 ########## Time periods ##########
 # Each period is trained and evaluated separately: train on [start, train_cutoff),
 # test on [train_cutoff, end]. Pick one with the PERIOD environment variable,
