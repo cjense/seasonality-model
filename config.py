@@ -4,17 +4,16 @@ import s3fs
 ########## CONFIG ##########
 GLACIER_NAME  = "zach"
 S3_BUCKET     = "s3://gaia"
-RESOLUTION    = "6D"                  # MS = monthly on the first of the month
+RESOLUTION    = "MS"                  # MS = monthly on the first of the month; 6D = 6-day bins
 CACHE_PARQUET = True                 # write flat df to S3 after extraction
 MODEL_SEED    = 42                    # random seed to train model
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
 SHAP_CHUNK_ROWS     = 2_000_000       # rows per GPU TreeSHAP call (too many at once -> cudaErrorInvalidConfiguration)
 GEOSHAP_MAX_ROWS    = 500_000         # GeoShapley row budget: whole timesteps (all pixels) are sampled up to this many rows
-SPECIAL_NAME  = "_new_discharge"             # include a special signifier to the end of filenames
-NOTES         = ("Run with encodings for all feature columns with lags "
-                 "and season sin and cosine. Test 2000-2015 and 2015-2025 with max_depth 5, new variable names, monthly resolution. "
-                 "Running on pre-2015 and post-2015 data. "
-                 "Calculating SHAP values of all features using GPU.")
+SPECIAL_NAME  = "_velocity"                  # include a special signifier to the end of filenames
+NOTES         = ("Predict per-pixel ice velocity anomaly (speed / pixel's training-period mean - 1), "
+                 "monthly, no lag features, post-2015 only (velocity starts Dec 2014). "
+                 "One model for the whole basin with x, y as features.")
 
 FEATURE_COLS = [
     # Spatial vars
@@ -23,12 +22,12 @@ FEATURE_COLS = [
     "Air Temperature (C)", "Mélange Area (km^2)",                           # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
     "Basin-Averaged Meltwater Runoff (mmWE/day)",
-    # Lag features
-    *[f"{lag}_{var}" for var in ["Per-pixel Meltwater Runoff (mmWE/day)",
-                                 "Air Temperature (C)", "Mélange Area (km^2)",
-                                 "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
-                                 "Basin-Averaged Meltwater Runoff (mmWE/day)"]
-      for lag in ("lag_1step", "lag_60d", "lag_90d")],      # no discharge lags (target)
+    # Lag features (off for the velocity test run)
+    # *[f"{lag}_{var}" for var in ["Per-pixel Meltwater Runoff (mmWE/day)",
+    #                              "Air Temperature (C)", "Mélange Area (km^2)",
+    #                              "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
+    #                              "Basin-Averaged Meltwater Runoff (mmWE/day)"]
+    #   for lag in ("lag_1step", "lag_60d", "lag_90d")],
     # "roll_30d_mean", "roll_30d_std",
     # Time encodings
     "season_sin", "season_cos",
@@ -48,12 +47,17 @@ non_seasonal_vars = [
     "x", "y",
 ]
 
-TARGET_COL = "Discharge (Gt/yr)"
+# Target: per-pixel ice velocity anomaly. Discharge is NOT a feature: it is computed from velocity.
+VELOCITY_PATH  = f"{S3_BUCKET}/cjense/data/velocity/basin_velocity_ZI.zarr"
+SPEED_COL      = "Ice Speed (m/yr)"
+TARGET_COL     = "Velocity Anomaly (fraction)"   # speed / pixel's training-period mean speed - 1
+TARGET_UNITS   = "(fraction of mean speed)"
+MIN_MEAN_SPEED = 50                             # m/yr; drop slow pixels where the ratio is mostly noise
 
 ########## Hyperparameter tuning ##########
 # Tuning runs on a random subset of training timesteps with time-blocked CV folds,
 # one GPU per fold (folds are spread over all GPUs in CUDA_VISIBLE_DEVICES, or N_GPUS if set).
-TUNE_TIME_FRAC    = 0.25    # fraction of training timesteps (all pixels kept) used for tuning
+TUNE_TIME_FRAC    = 1.0     # fraction of training timesteps (all pixels kept) used for tuning (monthly is small: use all)
 TUNE_NFOLD        = 3       # contiguous time-block folds -> up to this many GPUs used in parallel
 TUNE_GAP_DAYS     = 90      # purge training rows within this many days of each validation block (longest lag is 90d)
 TUNE_MAX_EVALS    = 30      # hyperopt trials

@@ -13,7 +13,7 @@ jobs:
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
 
     env:
-      PERIODS: "pre2015 post2015" # For training and testing pre- and post- Sentinel-1 launch
+      PERIODS: "post2015" # Velocity data starts Dec 2014, so only post-2015 for the velocity model (was "pre2015 post2015")
 
     steps:
       - name: Checkout repository

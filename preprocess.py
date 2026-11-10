@@ -1,6 +1,7 @@
 import textwrap
 import numpy as np
 import pandas as pd
+import xarray as xr
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -13,8 +14,8 @@ non_seasonal_vars = [
         "Air Temperature (C)", "Mélange Area (km^2)", 
         "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
         "Basin-Averaged Meltwater Runoff (mmWE/day)",
-        # Predictor var
-        "Discharge (Gt/yr)",
+        # Target var
+        TARGET_COL,
     ]
 
 def measure_correlation(df: pd.DataFrame):
@@ -68,6 +69,35 @@ def scatter_matrix(df: pd.DataFrame):
     fs.put(scatter_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_scatter_matrix_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
     plt.clf()
     plt.close()
+
+def load_velocity() -> pd.DataFrame:
+    '''
+    Load ice speed (band "vv") from the velocity zarr, mask fill values, resample to RESOLUTION
+    and flatten to (time, x, y, speed). Same 200 m grid as the regridded MAR runoff.
+    '''
+    ds = xr.open_zarr(VELOCITY_PATH, storage_options=storage_options, consolidated=False)
+    vv = ds["VelocityMap"].sel(band="vv")
+    vv = vv.where(vv > 0)                                   # fill value is -1; some early-2015 maps are all 0 (no data)
+    vv = vv.resample(time=RESOLUTION).mean()                # mix of 6/12-day maps -> RESOLUTION
+    vel = vv.to_dataframe(name=SPEED_COL).reset_index()[["time", "x", "y", SPEED_COL]]
+    vel = vel.dropna(subset=[SPEED_COL])
+    vel["time"] = vel["time"].astype("datetime64[ns]")
+    vel[SPEED_COL] = vel[SPEED_COL].astype("float32")
+    return vel
+
+def add_velocity_anomaly(df: pd.DataFrame) -> pd.DataFrame:
+    '''
+    Target = speed / pixel's mean speed over this PERIOD's training window - 1.
+    Uses the training window only so test data doesn't leak into the target.
+    Pixels slower than MIN_MEAN_SPEED (or with no training data) are dropped.
+    '''
+    in_train = df["time"].between(PERIOD_START, TRAIN_CUTOFF, inclusive="left")
+    pixel_mean = df[in_train].groupby(["x", "y"])[SPEED_COL].mean().rename("pixel_mean_speed")
+    pixel_mean = pixel_mean[pixel_mean >= MIN_MEAN_SPEED]
+    df = df.merge(pixel_mean.reset_index(), on=["x", "y"], how="inner")
+    df[TARGET_COL] = (df[SPEED_COL] / df["pixel_mean_speed"] - 1).astype("float32")
+    print(f"Velocity anomaly: {len(pixel_mean):,} pixels with mean speed >= {MIN_MEAN_SPEED} m/yr")
+    return df
 
 def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
     """
@@ -162,6 +192,10 @@ def main():
         df = spatial_df.merge(non_spatial, on="time", how="left")
         del spatial_df, non_spatial
 
+        # Inner merge with ice speed: keeps only pixels/times with velocity (2015 onward)
+        df["time"] = df["time"].astype("datetime64[ns]")
+        df = df.merge(load_velocity(), on=["time", "x", "y"], how="inner")
+
         # Average timestep length in days for any pandas frequency
         resolution_days = pd.date_range("2000-01-01", periods=101, freq=RESOLUTION).to_series().diff().mean() / pd.Timedelta("1D")
         df = engineer_features(df, resolution_days=resolution_days)
@@ -177,6 +211,9 @@ def main():
             df.head().to_markdown(buf=outfile)
             outfile.write("\n\n")
     
+    # Velocity anomaly depends on this period's training window, so it's computed after the (shared) cache
+    df = add_velocity_anomaly(df)
+
     # Drop NaNs from target feature
     # You can't predict NaN values!
     df = df.dropna(subset=[TARGET_COL])
