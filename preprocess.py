@@ -8,7 +8,7 @@ from config import *
 
 non_seasonal_vars = [
         # Spatial vars
-        "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",
+        # "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",
         # Non-spatial vars
         "Air Temperature (C)", "Mélange Area (km^2)", 
         "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
