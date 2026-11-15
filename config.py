@@ -9,42 +9,31 @@ CACHE_PARQUET = True                 # write flat df to S3 after extraction
 MODEL_SEED    = 42                    # random seed to train model
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
 GEOSHAP_MAX_ROWS    = 500_000         # GeoShapley row budget: whole timesteps (all pixels) are sampled up to this many rows
-SPECIAL_NAME  = "_new_discharge"             # include a special signifier to the end of filenames
-NOTES         = ("Run with encodings for all feature columns with lags "
-                 "and season sin and cosine. Test 2000-2015 and 2015-2025 with max_depth 5, new variable names, monthly resolution. "
+SPECIAL_NAME  = "_sincos_only"             # include a special signifier to the end of filenames
+NOTES         = ("Run only with sine and cosine waves to test overfitting. "
+                 "No lags, no other features. Test 2000-2015 and 2015-2025 with max_depth 5, new variable names, monthly resolution. "
                  "Running on pre-2015 and post-2015 data. "
                  "Calculating SHAP values of all features using GPU.")
 
 FEATURE_COLS = [
     # Spatial vars
-    "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",               # TODO: Add ice_elevation, distance_to_terminus
+    # "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",               # TODO: Add ice_elevation, distance_to_terminus
     # Non-spatial vars
-    "Air Temperature (C)", "Mélange Area (km^2)",                           # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
-    "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
-    "Basin-Averaged Meltwater Runoff (mmWE/day)",
+    # "Air Temperature (C)", "Mélange Area (km^2)",                           # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
+    # "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
+    # "Basin-Averaged Meltwater Runoff (mmWE/day)",
     # Lag features
-    *[f"{lag}_{var}" for var in ["Per-pixel Meltwater Runoff (mmWE/day)",
-                                 "Air Temperature (C)", "Mélange Area (km^2)",
-                                 "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
-                                 "Basin-Averaged Meltwater Runoff (mmWE/day)"]
-      for lag in ("lag_1step", "lag_60d", "lag_90d")],      # no discharge lags (target)
+    # *[f"{lag}_{var}" for var in ["Per-pixel Meltwater Runoff (mmWE/day)",
+    #                              "Air Temperature (C)", "Mélange Area (km^2)",
+    #                              "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
+    #                              "Basin-Averaged Meltwater Runoff (mmWE/day)"]
+    #   for lag in ("lag_1step", "lag_60d", "lag_90d")],      # no discharge lags (target)
     # "roll_30d_mean", "roll_30d_std",
     # Time encodings
     "season_sin", "season_cos",
     # "year_norm", "time_days",
     # Space
-    "x", "y",
-]
-
-non_seasonal_vars = [
-    # Spatial vars
-    "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",
-    # Non-spatial vars
-    "Air Temperature (C)", "Mélange Area (km^2)", 
-    "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
-    "Basin-Averaged Meltwater Runoff (mmWE/day)",
-    # Space
-    "x", "y",
+    # "x", "y",
 ]
 
 TARGET_COL = "Discharge (Gt/yr)"

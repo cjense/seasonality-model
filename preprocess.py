@@ -8,13 +8,13 @@ from config import *
 
 non_seasonal_vars = [
         # Spatial vars
-        "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",
-        # Non-spatial vars
-        "Air Temperature (C)", "Mélange Area (km^2)", 
-        "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
-        "Basin-Averaged Meltwater Runoff (mmWE/day)",
-        # Predictor var
-        "Discharge (Gt/yr)",
+        # "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",
+        # # Non-spatial vars
+        # "Air Temperature (C)", "Mélange Area (km^2)", 
+        # "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
+        # "Basin-Averaged Meltwater Runoff (mmWE/day)",
+        # # Predictor var
+        # "Discharge (Gt/yr)",
     ]
 
 def measure_correlation(df: pd.DataFrame):
