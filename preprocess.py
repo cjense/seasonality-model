@@ -35,7 +35,7 @@ def measure_correlation(df: pd.DataFrame):
     plt.tight_layout()
     
     plt.savefig('./figures/correlation.png', dpi=300, bbox_inches='tight')
-    heatmap_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_correlation_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
+    heatmap_path = f'{FIGURE_DIR}/{GLACIER_NAME}_correlation_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
     plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
     fs.put(heatmap_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_correlation_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
@@ -62,7 +62,7 @@ def scatter_matrix(df: pd.DataFrame):
     grid.figure.suptitle(f"Scatter matrix ({RESOLUTION} timestep means)", y=1.01)
 
     plt.savefig('./figures/scatter_matrix.png', dpi=300, bbox_inches='tight')
-    scatter_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_scatter_matrix_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
+    scatter_path = f'{FIGURE_DIR}/{GLACIER_NAME}_scatter_matrix_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png'
     plt.savefig(scatter_path, dpi=300, bbox_inches='tight')
     # Save figure to S3
     fs.put(scatter_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_scatter_matrix_{RESOLUTION}_seed{MODEL_SEED}{SPECIAL_NAME}.png')
@@ -77,8 +77,10 @@ def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
     Lag features are critical with one glacier: the model learns entirely from
     space × time variation, so velocity history at each pixel is a strong signal.
     """
-    df = df.sort_values(["x", "y", "time"]).reset_index(drop=True)
-    px = df.groupby(["x", "y"])
+    # Lags are taken within each pixel; non-spatial frames have one row per timestep
+    pixel_keys = [c for c in ("x", "y") if c in df.columns]
+    df = df.sort_values([*pixel_keys, "time"]).reset_index(drop=True)
+    px = df.groupby(pixel_keys) if pixel_keys else df
 
     # ── Lags (in timesteps) ──
     lag_steps = {
@@ -110,13 +112,8 @@ def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
 
     return df
 
-def main():
-    # First step of the pipeline: start a fresh results file for this period
-    with open(RESULTS_PATH, "w") as outfile:
-        outfile.write(f"## Period: {PERIOD} (train {PERIOD_START} to {TRAIN_CUTOFF}, test {TEST_START} to {PERIOD_END})\n\n")
-
-    # Look for existing file of the correct resolution
-    cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}{SPECIAL_NAME}.parquet"
+def load_flat(cache_path: str) -> pd.DataFrame:
+    """Per-pixel table: load the cached flat parquet, or build it from the spatial data and cache it."""
     try:
         print(f"Looking for cached flat parquet at {cache_path} ...")
         df = pd.read_parquet(cache_path, storage_options=storage_options)
@@ -176,6 +173,44 @@ def main():
             outfile.write(f"No cached file found. Made new file at {RESOLUTION} resolution and uploaded it to s3: {cache_path}.\n\n")
             df.head().to_markdown(buf=outfile)
             outfile.write("\n\n")
+
+    return df
+
+def build_nonspatial() -> pd.DataFrame:
+    """
+    One row per RESOLUTION timestep from the non-spatial parquet only.
+    Used when no feature varies by pixel: the per-pixel table would just repeat each
+    timestep once per pixel, so this gives the same information in a few MB of memory.
+    """
+    non_spatial = pd.read_parquet(f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_non_spatial.parquet", storage_options=storage_options)
+    non_spatial = non_spatial.reset_index()
+    non_spatial["time"] = pd.to_datetime(non_spatial["time"]).dt.normalize()
+    non_spatial = non_spatial.astype({c: "float32" for c in non_spatial.select_dtypes("float64").columns})
+
+    origin = pd.Timestamp("2000-01-01")
+    df = non_spatial.resample(RESOLUTION, on="time", origin=origin).mean().reset_index()
+
+    resolution_days = pd.date_range("2000-01-01", periods=101, freq=RESOLUTION).to_series().diff().mean() / pd.Timedelta("1D")
+    return engineer_features(df, resolution_days=resolution_days)
+
+def main():
+    # First step of the pipeline: start a fresh results file for this period
+    with open(RESULTS_PATH, "w") as outfile:
+        outfile.write(f"## Period: {PERIOD} (train {PERIOD_START} to {TRAIN_CUTOFF}, test {TEST_START} to {PERIOD_END})\n\n")
+
+    # Look for existing file of the correct resolution
+    cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}{SPECIAL_NAME}.parquet"
+    if NONSPATIAL_ONLY:
+        print("No spatial features in FEATURE_COLS: building one row per timestep from non-spatial data.")
+        df = build_nonspatial()
+        with open(RESULTS_PATH, 'a') as outfile:
+            outfile.write("### Data\n")
+            outfile.write(f"Non-spatial run: one row per {RESOLUTION} timestep from {GLACIER_NAME}_non_spatial.parquet "
+                          f"({len(df):,} rows, {df.memory_usage(deep=True).sum() / 1e6:.2f} MB)\n\n")
+            df.head().to_markdown(buf=outfile)
+            outfile.write("\n\n")
+    else:
+        df = load_flat(cache_path)
     
     # Drop NaNs from target feature
     # You can't predict NaN values!
@@ -185,11 +220,14 @@ def main():
     # (keeps non-spatial variables the same, averages spatial variables)
     df_ts = df[["time"] + non_seasonal_vars].groupby("time").mean()
     
-    # Make a correlation heatmap
-    measure_correlation(df_ts)
-    
-    # Make a scatter matrix
-    scatter_matrix(df_ts)
+    if non_seasonal_vars:
+        # Make a correlation heatmap
+        measure_correlation(df_ts)
+
+        # Make a scatter matrix
+        scatter_matrix(df_ts)
+    else:
+        print("non_seasonal_vars is empty: skipping correlation heatmap and scatter matrix.")
 
     # Split data into train and test set by time, keeping time alongside the features and target
     # so downstream scripts don't need to split it separately. A random split would leak: the

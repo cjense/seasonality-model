@@ -25,8 +25,8 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     combined_time = combined_time.iloc[sort_idx].reset_index(drop=True)
 
     # Compute SHAP values on the GPU with XGBoost's built-in GPUTreeSHAP.
-    print("Calculating SHAP values on GPU...")
-    model.set_param({"device": "cuda"})
+    print(f"Calculating SHAP values on {DEVICE}...")
+    model.set_param({"device": DEVICE})
     explainer = shap.TreeExplainer(
         model=model,
         data=None,
@@ -48,8 +48,9 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     shap_save_path = f'{S3_BUCKET}/cjense/data/testmodel/shap_values_{GLACIER_NAME}_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.parquet'
     df_shap = pd.DataFrame(shap_vals_combined.values, columns=[f"shap_{c}" for c in FEATURE_COLS])
     df_shap.insert(0, "time", combined_time)
-    df_shap.insert(1, "x", combined_features["x"])
-    df_shap.insert(2, "y", combined_features["y"])
+    # Per-pixel runs carry x/y; non-spatial runs have one row per timestep
+    for i, coord in enumerate(c for c in ("x", "y") if c in combined_features):
+        df_shap.insert(1 + i, coord, combined_features[coord])
     df_shap["base_value"] = shap_vals_combined.base_values
     df_shap.to_parquet(shap_save_path, storage_options=storage_options, index=False)
 
@@ -66,7 +67,7 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
                         plot_size=(14, 8))
     plt.title("SHAP values (path-dependent TreeSHAP, GPU)")
     plt.tight_layout()
-    beeswarm_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png'
+    beeswarm_path = f'{FIGURE_DIR}/{GLACIER_NAME}_beeswarm_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
     plt.savefig(f'./figures/beeswarm_{PERIOD}.png', dpi=300, bbox_inches='tight')
     plt.savefig(beeswarm_path, dpi=300, bbox_inches='tight')
@@ -103,7 +104,7 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     ax.set_xlabel("Year")
     ax.set_title("Mean SHAP values over all pixels (path-dependent TreeSHAP, GPU)")
 
-    heatmap_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png'
+    heatmap_path = f'{FIGURE_DIR}/{GLACIER_NAME}_heatmap_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
     plt.savefig(f'./figures/heatmap_{PERIOD}.png', dpi=300, bbox_inches='tight')
     plt.savefig(heatmap_path, dpi=300, bbox_inches='tight')

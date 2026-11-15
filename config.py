@@ -1,4 +1,5 @@
 import os
+import sys
 import s3fs
 
 ########## CONFIG ##########
@@ -37,6 +38,24 @@ FEATURE_COLS = [
 ]
 
 TARGET_COL = "Discharge (Gt/yr)"
+
+# Columns that vary by pixel. If no feature uses one of these, the model is non-spatial:
+# every pixel at a timestep has identical features and target, so preprocess.py builds
+# one row per timestep from the non-spatial parquet instead of the (huge) per-pixel table.
+SPATIAL_COLS = ["Per-pixel Meltwater Runoff (mmWE/day)", "ice_velocity", "x", "y"]
+NONSPATIAL_ONLY = not any(s in f for f in FEATURE_COLS for s in SPATIAL_COLS)
+
+########## Compute / output locations ##########
+# XGBoost device: "cuda" on the Linux GPU cluster, "cpu" elsewhere (override with XGB_DEVICE)
+DEVICE = os.environ.get("XGB_DEVICE", "cuda" if sys.platform.startswith("linux") else "cpu")
+
+# Where models and full-resolution figures are written (override with OUTPUT_DIR).
+# Defaults to the Tillicum scrubbed directory when it exists, otherwise this repo.
+_CLUSTER_OUTPUT_DIR = "/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model"
+OUTPUT_DIR = os.environ.get("OUTPUT_DIR",
+                            _CLUSTER_OUTPUT_DIR if os.path.isdir(_CLUSTER_OUTPUT_DIR) else os.path.dirname(os.path.abspath(__file__)))
+FIGURE_DIR = os.path.join(OUTPUT_DIR, "figures")
+MODEL_DIR  = os.path.join(OUTPUT_DIR, "models")
 
 ########## Time periods ##########
 # Each period is trained and evaluated separately: train on [start, train_cutoff),
@@ -85,7 +104,9 @@ storage_options = {
 TRAIN_PATH = f"{S3_BUCKET}/cjense/data/testmodel/train_{RESOLUTION}{RUN_NAME}.parquet"
 TEST_PATH  = f"{S3_BUCKET}/cjense/data/testmodel/test_{RESOLUTION}{RUN_NAME}.parquet"
 
-LOCAL_MODEL_PATH = f"/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/models/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.json"
+LOCAL_MODEL_PATH = f"{MODEL_DIR}/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.json"
 S3_MODEL_PATH    = f"{S3_BUCKET}/cjense/data/testmodel/{GLACIER_NAME}_xgb_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.json"
 
 os.makedirs("./figures", exist_ok=True)
+os.makedirs(FIGURE_DIR, exist_ok=True)
+os.makedirs(MODEL_DIR, exist_ok=True)

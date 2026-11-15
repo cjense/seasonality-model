@@ -2,18 +2,19 @@
 authors = ["Claire <clairej735@gmail.com>"]
 channels = ["rapidsai", "nvidia", "conda-forge"]
 name = "seasonality-model"
-platforms = [{ name = "linux-64-cuda", platform = "linux-64", cuda = "12" }]
+platforms = [{ name = "linux-64-cuda", platform = "linux-64", cuda = "12" }, "osx-arm64"]
 version = "0.1.0"
 
 [environments]
-seasonality-model = ["default"]
+# GPU environment used on Tillicum (CI)
+seasonality-model = ["cuda"]
+# CPU-only environment for running locally (e.g. on a Mac)
+local = ["cpu"]
 
 [tasks]
 
 [dependencies]
 numpy = ">=2.5.3,<3"
-xgboost = { version = ">=3.4.2,<4", build = "cuda*" }
-nccl = { version = "*", channel = "conda-forge" }
 dask = ">=2026.8.0,<2027"
 pandas = ">=3.0.6,<4"
 xarray = ">=2026.7.0,<2027"
@@ -30,3 +31,16 @@ hyperopt = ">=0.3.0,<0.4"
 
 [pypi-dependencies]
 geoshapley = ">=0.2.0.0, <0.3"
+
+[feature.cuda]
+platforms = ["linux-64-cuda"]
+
+[feature.cuda.dependencies]
+xgboost = { version = ">=3.4.2,<4", build = "cuda*" }
+nccl = { version = "*", channel = "conda-forge" }
+
+[feature.cpu]
+platforms = ["osx-arm64"]
+
+[feature.cpu.dependencies]
+xgboost = { version = ">=3.4.2,<4", build = "cpu*" }

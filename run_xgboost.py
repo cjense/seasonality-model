@@ -12,7 +12,7 @@ def train_model(dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.
 
     params = {
         "tree_method":      "hist",
-        "device":           "cuda",
+        "device":           DEVICE,
         "objective":        "reg:squarederror",
         "eval_metric":      ["rmse", "mae", "mape"],
         "max_depth":        5,
@@ -92,7 +92,7 @@ def plot_predictions(model: xgb.Booster, train_df: pd.DataFrame, test_df: pd.Dat
     ax.set_ylabel(TARGET_COL)
     ax.set_title(f"Period: {PERIOD}")
     ax.legend()
-    xgboost_fig_path = f'/gpfs/scrubbed/jensencc/negis-seasonality/seasonality-model/figures/{GLACIER_NAME}_xgbresult_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png'
+    xgboost_fig_path = f'{FIGURE_DIR}/{GLACIER_NAME}_xgbresult_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
     plt.savefig(f'./figures/xgboost_result_{PERIOD}.png', dpi=300, bbox_inches='tight')
     plt.savefig(xgboost_fig_path, dpi=300, bbox_inches='tight')

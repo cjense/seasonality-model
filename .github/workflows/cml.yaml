@@ -19,6 +19,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Configure pixi environment location
+        # Keep the env outside the checkout so `git clean` doesn't wipe it every run.
+        # Set here (not in the tracked .pixi/config.toml) so local machines aren't pointed at /gpfs.
+        run: pixi config set --local detached-environments /gpfs/scrubbed/jensencc/pixi-envs
+
       - name: Verify GPU access
         run: |
           echo "Checking GPU availability..."
