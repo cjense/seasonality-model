@@ -69,7 +69,7 @@ def scatter_matrix(df: pd.DataFrame):
     plt.clf()
     plt.close()
 
-def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
+def engineer_features(df: pd.DataFrame, resolution_days: float, feature_cols: list = FEATURE_COLS) -> pd.DataFrame:
     """
     Add lag, rolling, and time-encoding features.
     All lags are in timesteps, not days — adjust shift() values if changing resolution.
@@ -90,8 +90,8 @@ def engineer_features(df: pd.DataFrame, resolution_days: float) -> pd.DataFrame:
         "lag_90d":   max(1, round(90 / resolution_days)),
     }
 
-    # Only build the lag columns listed in FEATURE_COLS (e.g. "lag_60d_airtemp")
-    for col in FEATURE_COLS:
+    # Only build the lag columns listed in feature_cols (e.g. "lag_60d_airtemp")
+    for col in feature_cols:
         for prefix, steps in lag_steps.items():
             if col.startswith(prefix + "_"):
                 feature = col[len(prefix) + 1:]
@@ -176,7 +176,7 @@ def load_flat(cache_path: str) -> pd.DataFrame:
 
     return df
 
-def build_nonspatial() -> pd.DataFrame:
+def build_nonspatial(feature_cols: list = FEATURE_COLS) -> pd.DataFrame:
     """
     One row per RESOLUTION timestep from the non-spatial parquet only.
     Used when no feature varies by pixel: the per-pixel table would just repeat each
@@ -191,7 +191,7 @@ def build_nonspatial() -> pd.DataFrame:
     df = non_spatial.resample(RESOLUTION, on="time", origin=origin).mean().reset_index()
 
     resolution_days = pd.date_range("2000-01-01", periods=101, freq=RESOLUTION).to_series().diff().mean() / pd.Timedelta("1D")
-    return engineer_features(df, resolution_days=resolution_days)
+    return engineer_features(df, resolution_days=resolution_days, feature_cols=feature_cols)
 
 def main():
     # First step of the pipeline: start a fresh results file for this period
