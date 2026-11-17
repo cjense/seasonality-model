@@ -77,10 +77,19 @@ jobs:
           names = ["correlation.png", "scatter_matrix.png"]
           for period in os.environ["PERIODS"].split():
               names += [f"xgboost_result_{period}.png", f"beeswarm_{period}.png", f"heatmap_{period}.png"]
+          # Some figures are optional (e.g. no correlation/scatter plots when non_seasonal_vars is empty)
+          uploaded = []
           for name in names:
+              if not os.path.exists(f"figures/{name}"):
+                  print(f"Skipping missing figure: {name}")
+                  continue
               fs.put(f"figures/{name}",
                      f"{S3_BUCKET}/cjense/ci-figures/{os.environ['GITHUB_RUN_ID']}/{name}",
                      ACL="public-read", ContentType="image/png")
+              uploaded.append(name)
+          # List of uploaded figures for the report step
+          with open("uploaded_figures.txt", "w") as f:
+              f.write("\n".join(uploaded) + "\n")
           PY
 
       - name: Report results
@@ -89,10 +98,9 @@ jobs:
         run: |
           FIG_URL="${S3_ENDPOINT_URL}/gaia/cjense/ci-figures/${GITHUB_RUN_ID}"
           : > modelresults.md
-          echo "![](${FIG_URL}/correlation.png)" >> modelresults.md
-          echo "![](${FIG_URL}/xgboost_result.png)" >> modelresults.md
-          echo "![](${FIG_URL}/beeswarm.png)" >> modelresults.md
-          echo "![](${FIG_URL}/heatmap.png)" >> modelresults.md
+          while read -r name; do
+            [ -n "$name" ] && echo "![${name}](${FIG_URL}/${name})" >> modelresults.md
+          done < uploaded_figures.txt
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             curl -s -X POST \
