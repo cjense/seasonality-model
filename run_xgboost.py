@@ -90,7 +90,7 @@ def plot_predictions(model: xgb.Booster, train_df: pd.DataFrame, test_df: pd.Dat
     ax.axvline(pd.Timestamp(TRAIN_CUTOFF), color="gray", linestyle=":", linewidth=1)
     ax.set_xlabel("Time")
     ax.set_ylabel(TARGET_COL)
-    ax.set_title(f"Period: {PERIOD}")
+    ax.set_title(f"Train {PERIOD_START} to {TRAIN_CUTOFF}, test {TEST_START} to {PERIOD_END}")
     ax.legend()
     xgboost_fig_path = f'{FIGURE_DIR}/{GLACIER_NAME}_xgbresult_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
