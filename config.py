@@ -10,16 +10,16 @@ CACHE_PARQUET = True                 # write flat df to S3 after extraction
 MODEL_SEED    = 42                    # random seed to train model
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
 GEOSHAP_MAX_ROWS    = 500_000         # GeoShapley row budget: whole timesteps (all pixels) are sampled up to this many rows
-SPECIAL_NAME  = "_2008_2015_melt_airT_OTF"             # include a special signifier to the end of filenames
-NOTES         = ("Run on ZI 2008-2025 with meltwater, air T, ocean thermal forcing. Monthly resolution.")
+SPECIAL_NAME  = "_sincosonly"             # include a special signifier to the end of filenames
+NOTES         = ("Run on ZI with only sine and cosine from 2008-2025.")
 
 FEATURE_COLS = [
     # Spatial vars
     # "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",               # TODO: Add ice_elevation, distance_to_terminus
     # Non-spatial vars
-    "Air Temperature (C)", #"Mélange Area (km^2)",                           # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
-    "Ocean Thermal Forcing (C)", #"Terminus Area (km^2)",
-    "Basin-Averaged Meltwater Runoff (mmWE/day)",
+    # "Air Temperature (C)", #"Mélange Area (km^2)",                           # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
+    # "Ocean Thermal Forcing (C)", #"Terminus Area (km^2)",
+    # "Basin-Averaged Meltwater Runoff (mmWE/day)",
     # Lag features
     # *[f"{lag}_{var}" for var in ["Per-pixel Meltwater Runoff (mmWE/day)",
     #                              "Air Temperature (C)", "Mélange Area (km^2)",
@@ -28,7 +28,7 @@ FEATURE_COLS = [
     #   for lag in ("lag_1step", "lag_60d", "lag_90d")],      # no discharge lags (target)
     # "roll_30d_mean", "roll_30d_std",
     # Time encodings
-    # "season_sin", "season_cos",
+    "season_sin", "season_cos",
     # "year_norm", "time_days",
     # Space
     # "x", "y",
