@@ -10,14 +10,14 @@ CACHE_PARQUET = True                 # write flat df to S3 after extraction
 MODEL_SEED    = 42                    # random seed to train model
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
 GEOSHAP_MAX_ROWS    = 500_000         # GeoShapley row budget: whole timesteps (all pixels) are sampled up to this many rows
-SPECIAL_NAME  = "_2012_2025_melt_airT_OTF_termarea"             # include a special signifier to the end of filenames
-NOTES         = ("Run on ZI 2012-2025 with meltwater, air T, ocean thermal forcing, and terminus area. Monthly resolution.")
+SPECIAL_NAME  = "_2015_2025_melt_airT_OTF_termarea_melange"             # include a special signifier to the end of filenames
+NOTES         = ("Run on ZI 2015-2025 with meltwater, air T, ocean thermal forcing, mélange and terminus area. Monthly resolution.")
 
 FEATURE_COLS = [
     # Spatial vars
     # "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",               # TODO: Add ice_elevation, distance_to_terminus
     # Non-spatial vars
-    "Air Temperature (C)", #"Mélange Area (km^2)",                           # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
+    "Air Temperature (C)", "Mélange Area (km^2)",                           # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
     "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
     "Basin-Averaged Meltwater Runoff (mmWE/day)",
     # Lag features
