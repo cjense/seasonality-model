@@ -13,7 +13,7 @@ jobs:
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
 
     env:
-      PERIODS: "pre2015 post2015" # For training and testing pre- and post- Sentinel-1 launch
+      PERIODS: "full" # "pre2015 post2015" # For training and testing pre- and post- Sentinel-1 launch
 
     steps:
       - name: Checkout repository

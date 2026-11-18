@@ -10,18 +10,15 @@ CACHE_PARQUET = True                 # write flat df to S3 after extraction
 MODEL_SEED    = 42                    # random seed to train model
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
 GEOSHAP_MAX_ROWS    = 500_000         # GeoShapley row budget: whole timesteps (all pixels) are sampled up to this many rows
-SPECIAL_NAME  = "_sincos_only"             # include a special signifier to the end of filenames
-NOTES         = ("Run only with sine and cosine waves to test overfitting. "
-                 "No lags, no other features. Test 2000-2015 and 2015-2025 with max_depth 5, new variable names, monthly resolution. "
-                 "Running on pre-2015 and post-2015 data. "
-                 "Calculating SHAP values of all features using GPU.")
+SPECIAL_NAME  = "_2008_2015_melt_airT_OTF"             # include a special signifier to the end of filenames
+NOTES         = ("Run on ZI 2008-2025 with meltwater, air T, ocean thermal forcing. Monthly resolution.")
 
 FEATURE_COLS = [
     # Spatial vars
     # "Per-pixel Meltwater Runoff (mmWE/day)", #"ice_velocity",               # TODO: Add ice_elevation, distance_to_terminus
     # Non-spatial vars
-    "Air Temperature (C)", "Mélange Area (km^2)",                           # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
-    "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
+    "Air Temperature (C)", #"Mélange Area (km^2)",                           # TODO: Add tongue_length, average_meltwater_runoff, melange_rigidity
+    "Ocean Thermal Forcing (C)", #"Terminus Area (km^2)",
     "Basin-Averaged Meltwater Runoff (mmWE/day)",
     # Lag features
     # *[f"{lag}_{var}" for var in ["Per-pixel Meltwater Runoff (mmWE/day)",
@@ -63,8 +60,8 @@ MODEL_DIR  = os.path.join(OUTPUT_DIR, "models")
 # e.g. `PERIOD=pre2015 python run_xgboost.py`. Defaults to the full record.
 PERIODS = {
     "full":     {"start": "2008-07-17", "train_cutoff": "2018-01-01", "end": "2025-12-31"},
-    "pre2015":  {"start": "2008-07-17", "train_cutoff": "2013-04-01", "end": "2014-12-31"},
-    "post2015": {"start": "2015-01-01", "train_cutoff": "2022-06-01", "end": "2025-12-31"},
+    # "pre2015":  {"start": "2008-07-17", "train_cutoff": "2013-04-01", "end": "2014-12-31"},
+    # "post2015": {"start": "2015-01-01", "train_cutoff": "2022-06-01", "end": "2025-12-31"},
 }
 PERIOD = os.environ.get("PERIOD", "full")
 if PERIOD not in PERIODS:
