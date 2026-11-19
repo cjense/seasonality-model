@@ -59,7 +59,7 @@ MODEL_DIR  = os.path.join(OUTPUT_DIR, "models")
 # test on [train_cutoff, end]. Pick one with the PERIOD environment variable,
 # e.g. `PERIOD=pre2015 python run_xgboost.py`. Defaults to the full record.
 PERIODS = {
-    "full":     {"start": "2012-01-01", "train_cutoff": "2021-01-01", "end": "2025-12-31"},
+    "full":     {"start": "2012-01-01", "train_cutoff": "2023-01-01", "end": "2025-12-31"},
     # "pre2015":  {"start": "2008-07-17", "train_cutoff": "2013-04-01", "end": "2014-12-31"},
     # "post2015": {"start": "2015-01-01", "train_cutoff": "2022-06-01", "end": "2025-12-31"},
 }
