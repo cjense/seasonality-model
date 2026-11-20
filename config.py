@@ -36,6 +36,16 @@ FEATURE_COLS = [
 
 TARGET_COL = "Discharge (Gt/yr)"
 
+########## Detrending ##########
+# Remove the long-term trend from the target and every input feature before training, so the
+# model (and SHAP) attribute the seasonal/interannual signal rather than the multi-year trend.
+# A polynomial in time is fit to the TRAIN period only (no test leakage) and extrapolated over
+# the test period. The training mean is added back, so values stay in physical units.
+DETREND        = True
+DETREND_DEGREE = 1                     # 1 = linear trend; 2 = quadratic (extrapolates less safely)
+# Columns that are encodings of time/space, not physical variables: never detrended
+DETREND_EXCLUDE = ["season_sin", "season_cos", "year_norm", "time_days", "x", "y"]
+
 # Columns that vary by pixel. If no feature uses one of these, the model is non-spatial:
 # every pixel at a timestep has identical features and target, so preprocess.py builds
 # one row per timestep from the non-spatial parquet instead of the (huge) per-pixel table.
@@ -75,7 +85,7 @@ PERIOD_END   = PERIODS[PERIOD]["end"]
 
 # Appended to every per-period output (train/test sets, models, figures, SHAP values).
 # The flat feature cache and correlation matrix are shared, so they keep SPECIAL_NAME only.
-RUN_NAME = f"{SPECIAL_NAME}_{PERIOD}"
+RUN_NAME = f"{SPECIAL_NAME}{'_detrended' if DETREND else ''}_{PERIOD}"
 
 # Results for each period are written to their own markdown file
 RESULTS_PATH = f"modelresults_{PERIOD}.md"

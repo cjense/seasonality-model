@@ -193,6 +193,81 @@ def build_nonspatial(feature_cols: list = FEATURE_COLS) -> pd.DataFrame:
     resolution_days = pd.date_range("2000-01-01", periods=101, freq=RESOLUTION).to_series().diff().mean() / pd.Timedelta("1D")
     return engineer_features(df, resolution_days=resolution_days, feature_cols=feature_cols)
 
+def detrend(df: pd.DataFrame, cols: list, fit_mask: np.ndarray, degree: int = DETREND_DEGREE) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Remove a polynomial-in-time trend from each column in `cols`, in place.
+
+    The trend is fit by least squares on the rows where `fit_mask` is True (the training
+    period) and evaluated on every row, so the test period uses the trend extrapolated from
+    training. The fitted mean over the training rows is added back, so the result is
+    `value - trend(t) + train_mean`: same units and level as the raw data, without the trend.
+
+    Columns that vary by pixel are fit separately per pixel (grouped by x, y when present);
+    non-spatial columns have one value per timestep and get a single fit.
+
+    Returns the detrended df and a table of fitted trend slopes (per year, at the start of the period).
+    """
+    # Time in years since the start of the period (keeps the polynomial well conditioned)
+    t = ((pd.to_datetime(df["time"]) - pd.Timestamp(PERIOD_START)).dt.days / 365.25).to_numpy()
+    T = np.vander(t, degree + 1, increasing=True)          # columns: 1, t, t^2, ...
+    n_coef = degree + 1
+
+    pixel_keys = [c for c in ("x", "y") if c in df.columns]
+    group = df.groupby(pixel_keys, sort=False).ngroup().to_numpy() if pixel_keys else np.zeros(len(df), dtype=int)
+    n_groups = group.max() + 1
+
+    slopes = {}
+    for col in dict.fromkeys(cols):                         # dedupe, keep order
+        y = df[col].to_numpy(dtype="float64")
+        ok = fit_mask & np.isfinite(y)
+        if not ok.any():
+            print(f"Warning: no finite training values for '{col}', not detrended.")
+            continue
+
+        # Per-group normal equations (T'T) b = T'y, accumulated with bincount so millions
+        # of pixel rows don't need a Python loop over pixels
+        g = group[ok]
+        TT = np.empty((n_groups, n_coef, n_coef))
+        Ty = np.empty((n_groups, n_coef))
+        for i in range(n_coef):
+            Ty[:, i] = np.bincount(g, weights=T[ok, i] * y[ok], minlength=n_groups)
+            for j in range(i, n_coef):
+                TT[:, i, j] = TT[:, j, i] = np.bincount(g, weights=T[ok, i] * T[ok, j], minlength=n_groups)
+        # pinv handles pixels with too few training points (they get a near-zero/flat trend)
+        coef = (np.linalg.pinv(TT) @ Ty[..., None])[..., 0]   # (n_groups, n_coef)
+
+        trend = np.einsum("nk,nk->n", T, coef[group])
+        n_train = TT[:, 0, 0]
+        train_mean = np.divide(Ty[:, 0], n_train, out=np.zeros(n_groups), where=n_train > 0)[group]
+
+        df[col] = (y - trend + train_mean).astype(df[col].dtype)
+        slopes[col] = coef[n_train > 0, 1].mean() if degree >= 1 else 0.0
+
+    slope_table = pd.DataFrame({"Trend slope (units/yr)": pd.Series(slopes)})
+    return df, slope_table
+
+def plot_detrend(raw_ts: pd.DataFrame, detrended_ts: pd.DataFrame):
+    """One panel per variable: raw timestep means, the removed trend, and the detrended series."""
+    cols = list(raw_ts.columns)
+    fig, axes = plt.subplots(len(cols), 1, figsize=(12, 2.4 * len(cols)), sharex=True, squeeze=False)
+    for ax, col in zip(axes[:, 0], cols):
+        ax.plot(raw_ts.index, raw_ts[col], color="gray", linewidth=1, label="raw")
+        ax.plot(detrended_ts.index, detrended_ts[col], color="tab:blue", linewidth=1, label="detrended")
+        # Removed trend, shifted to the train mean so it overlays the raw series
+        ax.plot(raw_ts.index, raw_ts[col] - detrended_ts[col] + detrended_ts[col].loc[:TRAIN_CUTOFF].mean(),
+                color="tab:red", linewidth=1, linestyle="--", label="trend")
+        ax.axvline(pd.Timestamp(TRAIN_CUTOFF), color="gray", linestyle=":", linewidth=1)
+        ax.set_ylabel(textwrap.fill(col, 22), fontsize=8)
+    axes[0, 0].legend(loc="upper left", fontsize=8)
+    axes[0, 0].set_title(f"Detrending (degree {DETREND_DEGREE} polynomial fit on {PERIOD_START} to {TRAIN_CUTOFF})")
+    plt.tight_layout()
+
+    plt.savefig(f'./figures/detrend_{PERIOD}.png', dpi=300, bbox_inches='tight')
+    detrend_path = f'{FIGURE_DIR}/{GLACIER_NAME}_detrend_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png'
+    plt.savefig(detrend_path, dpi=300, bbox_inches='tight')
+    fs.put(detrend_path, f'{S3_BUCKET}/cjense/data/testmodel/figures/{GLACIER_NAME}_detrend_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png')
+    plt.close(fig)
+
 def main():
     # First step of the pipeline: start a fresh results file for this period
     with open(RESULTS_PATH, "w") as outfile:
@@ -228,6 +303,25 @@ def main():
         scatter_matrix(df_ts)
     else:
         print("non_seasonal_vars is empty: skipping correlation heatmap and scatter matrix.")
+
+    # Remove the long-term trend from the target and all physical input features.
+    # Done before selecting columns so x/y are still available for per-pixel fits.
+    if DETREND:
+        df = df[df["time"].between(PERIOD_START, PERIOD_END)].copy()
+        detrend_cols = [c for c in [*FEATURE_COLS, TARGET_COL] if c not in DETREND_EXCLUDE]
+        fit_mask = (df["time"] < TRAIN_CUTOFF).to_numpy()
+
+        raw_ts = df.groupby("time")[detrend_cols].mean()
+        df, slope_table = detrend(df, detrend_cols, fit_mask)
+        plot_detrend(raw_ts, df.groupby("time")[detrend_cols].mean())
+        del raw_ts
+
+        with open(RESULTS_PATH, 'a') as outfile:
+            outfile.write("### Detrending\n")
+            outfile.write(f"Removed a degree-{DETREND_DEGREE} polynomial trend (fit on train period "
+                          f"{PERIOD_START} to {TRAIN_CUTOFF}, extrapolated over test) from the target and features; "
+                          f"train mean added back. Spatial columns fit per pixel (mean slope shown).\n\n")
+            outfile.write(slope_table.to_markdown() + "\n\n")
 
     # Split data into train and test set by time, keeping time alongside the features and target
     # so downstream scripts don't need to split it separately. A random split would leak: the
