@@ -35,7 +35,13 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
         feature_perturbation="tree_path_dependent",
     )
 
-    shap_vals_raw = explainer.shap_values(combined_features[FEATURE_COLS])
+    # Explain in row chunks: GPUTreeSHAP's kernel launch fails (cudaErrorInvalidConfiguration)
+    # when rows x tree paths gets too large, e.g. tens of millions of pixel rows x ~1000 trees.
+    X = combined_features[FEATURE_COLS]
+    shap_vals_raw = np.concatenate([
+        explainer.shap_values(X.iloc[start:start + SHAP_CHUNK_ROWS])
+        for start in range(0, len(X), SHAP_CHUNK_ROWS)
+    ])
 
     shap_vals_combined = shap.Explanation(
         values=shap_vals_raw,

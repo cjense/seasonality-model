@@ -9,7 +9,8 @@ RESOLUTION    = "MS"                  # MS = monthly on the first of the month
 CACHE_PARQUET = True                 # write flat df to S3 after extraction
 MODEL_SEED    = 42                    # random seed to train model
 BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plotting all rows takes hours)
-GEOSHAP_MAX_ROWS    = 500_000         # GeoShapley row budget: whole timesteps (all pixels) are sampled up to this many rows
+SHAP_CHUNK_ROWS     = 1_000_000       # rows per GPU TreeSHAP call (large single calls overflow the CUDA launch config)
+GEOSHAP_MAX_ROWS    = 500_000        # GeoShapley row budget: whole timesteps (all pixels) are sampled up to this many rows
 SPECIAL_NAME  = "_2008_2025_melt_airt_otf"             # include a special signifier to the end of filenames
 NOTES         = ("Run on ZI 2008-2025 with meltwater, air T, OTF, terminus area. Monthly resolution.")
 
@@ -50,7 +51,9 @@ DETREND_EXCLUDE = ["season_sin", "season_cos", "year_norm", "time_days", "x", "y
 # every pixel at a timestep has identical features and target, so preprocess.py builds
 # one row per timestep from the non-spatial parquet instead of the (huge) per-pixel table.
 SPATIAL_COLS = ["Per-pixel Meltwater Runoff (mmWE/day)", "ice_velocity", "x", "y"]
-NONSPATIAL_ONLY = not any(s in f for f in FEATURE_COLS for s in SPATIAL_COLS)
+# Match whole names (or lag/rolling features built from them, e.g. "lag_1step_x"), not substrings:
+# a substring test flags "Basin-Averaged Meltwater Runoff (mmWE/day)" as spatial because it contains "y".
+NONSPATIAL_ONLY = not any(f == s or f.endswith("_" + s) for f in FEATURE_COLS for s in SPATIAL_COLS)
 
 ########## Compute / output locations ##########
 # XGBoost device: "cuda" on the Linux GPU cluster, "cpu" elsewhere (override with XGB_DEVICE)
