@@ -8,7 +8,8 @@ Steps:
      trains on all the others, before and after it).
   4. Report out-of-fold metrics, fit the final model on all data, and explain it with SHAP.
 
-Outputs: modelresults.md and figures/{predictions,beeswarm,heatmap}.png (picked up by GitHub Actions),
+Runs once per entry in RUNS (different periods / feature sets).
+Outputs: modelresults.md and figures/{run}_{predictions,beeswarm,heatmap}.png (picked up by GitHub Actions),
 plus SHAP values and predictions saved to S3.
 
 Usage:  python run_rf.py
@@ -29,17 +30,22 @@ from sklearn.model_selection import GridSearchCV, LeaveOneGroupOut, cross_val_pr
 DATA_PATH  = "s3://gaia/cjense/data/testmodel/zach_non_spatial.parquet"
 OUT_PREFIX = "s3://gaia/cjense/data/testmodel/rf"   # SHAP values + predictions are written under this
 RESOLUTION = "6D"                                   # pandas frequency to average to, e.g. "6D", "MS"
-START, END = "2008-07-17", "2025-12-31"             # air temperature starts 2008-07-17
 SEED       = 42
 
 TARGET = "Discharge (Gt/yr)"#"Near-Terminus Velocity (m/yr)"            # or "Discharge (Gt/yr)"
-FEATURES = [
+BASE_FEATURES = [
     "Air Temperature (C)",
-    "Mélange Area (km^2)",
     "Ocean Thermal Forcing (C)",
     "Terminus Area (km^2)",
     "Basin-Averaged Meltwater Runoff (mmWE/day)",
 ]
+
+# Each run is tuned, cross-validated and explained separately. Air temperature starts 2008-07-17;
+# mélange area only starts 2015-01-25, so it gets its own shorter run.
+RUNS = {
+    "2008_2025":         {"start": "2008-07-17", "end": "2025-12-31", "features": BASE_FEATURES},
+    "2015_2025_melange": {"start": "2015-01-01", "end": "2025-12-31", "features": BASE_FEATURES + ["Mélange Area (km^2)"]},
+}
 
 DETREND = True          # remove a linear trend from target and features (fit over the whole period)
 
@@ -62,14 +68,14 @@ storage_options = {
 fs = s3fs.S3FileSystem(**storage_options)
 
 
-def load_data() -> pd.DataFrame:
+def load_data(start: str, end: str, features: list) -> pd.DataFrame:
     df = pd.read_parquet(DATA_PATH, storage_options=storage_options)
     df["time"] = pd.to_datetime(df["time"])
-    df = df.set_index("time")[[*FEATURES, TARGET]].resample(RESOLUTION).mean()
-    df = df.loc[START:END]
-
-    # Sparse features (terminus area, OTF, mélange) have gaps: interpolate inside the record, never extrapolate
-    df[FEATURES] = df[FEATURES].interpolate(method="time", limit_area="inside")
+    df = df.set_index("time")[[*features, TARGET]].resample(RESOLUTION).mean()
+    # Sparse features (terminus area, OTF, mélange) have gaps: interpolate inside the record, never extrapolate.
+    # Done before cutting to [start, end] so observations just outside the window can anchor the edges.
+    df[features] = df[features].interpolate(method="time", limit_area="inside")
+    df = df.loc[start:end]
     df = df.dropna()
     print(f"{len(df)} timesteps at {RESOLUTION}, {df.index.min():%Y-%m-%d} to {df.index.max():%Y-%m-%d}")
     return df
@@ -91,10 +97,11 @@ def save_fig(name: str):
     plt.close("all")
 
 
-def main():
-    raw = load_data()
+def run_model(name: str, start: str, end: str, features: list):
+    print(f"\n===== Run {name}: {start} to {end}, {len(features)} features =====")
+    raw = load_data(start, end, features)
     df = detrend(raw) if DETREND else raw
-    X, y = df[FEATURES], df[TARGET]
+    X, y = df[features], df[TARGET]
     years = df.index.year
     cv = LeaveOneGroupOut()
 
@@ -127,35 +134,35 @@ def main():
     ax.plot(y.index, y, color="black", lw=1, label="observed")
     ax.plot(pred.index, pred, color="tab:blue", lw=1, ls="--", label="predicted (year held out)")
     ax.set_ylabel(label)
-    ax.set_title("Random forest, leave-one-year-out predictions")
+    ax.set_title(f"Random forest ({name}), leave-one-year-out predictions")
     ax.legend()
-    save_fig("predictions")
+    save_fig(f"{name}_predictions")
 
-    shap.plots.beeswarm(sv, show=False, max_display=len(FEATURES), plot_size=(12, 6))
-    plt.title(f"SHAP values: {label}")
-    save_fig("beeswarm")
+    shap.plots.beeswarm(sv, show=False, max_display=len(features), plot_size=(12, 6))
+    plt.title(f"SHAP values ({name}): {label}")
+    save_fig(f"{name}_beeswarm")
 
-    ax = shap.plots.heatmap(sv, instance_order=np.arange(len(X)), max_display=len(FEATURES), show=False)
+    ax = shap.plots.heatmap(sv, instance_order=np.arange(len(X)), max_display=len(features), show=False)
     ax.set_aspect("auto")
     ax.figure.set_size_inches(15, 5)
     first_of_year = np.flatnonzero(pd.Series(years).ne(pd.Series(years).shift()))
     ax.set_xticks(first_of_year)
     ax.set_xticklabels(years[first_of_year], rotation=0)
     ax.set_xlabel("Year")
-    ax.set_title(f"SHAP values over time: {label}")
-    save_fig("heatmap")
+    ax.set_title(f"SHAP values over time ({name}): {label}")
+    save_fig(f"{name}_heatmap")
 
     ##### Save values to S3 #####
-    shap_df = pd.DataFrame(sv.values, index=df.index, columns=[f"shap_{c}" for c in FEATURES])
+    shap_df = pd.DataFrame(sv.values, index=df.index, columns=[f"shap_{c}" for c in features])
     shap_df["base_value"] = sv.base_values
-    shap_df.to_parquet(f"{OUT_PREFIX}_shap_{RESOLUTION}.parquet", storage_options=storage_options)
+    shap_df.to_parquet(f"{OUT_PREFIX}_{name}_shap_{RESOLUTION}.parquet", storage_options=storage_options)
     pd.DataFrame({"observed": y, "predicted_oof": pred}).to_parquet(
-        f"{OUT_PREFIX}_predictions_{RESOLUTION}.parquet", storage_options=storage_options)
+        f"{OUT_PREFIX}_{name}_predictions_{RESOLUTION}.parquet", storage_options=storage_options)
 
     ##### Results summary (posted as a GitHub comment by the workflow) #####
-    mean_abs_shap = pd.Series(np.abs(sv.values).mean(axis=0), index=FEATURES).sort_values(ascending=False)
-    with open("modelresults.md", "w") as f:
-        f.write(f"## Random forest: {label}\n\n")
+    mean_abs_shap = pd.Series(np.abs(sv.values).mean(axis=0), index=features).sort_values(ascending=False)
+    with open("modelresults.md", "a") as f:
+        f.write(f"## Random forest {name}: {label}\n\n")
         f.write(f"{len(df)} timesteps at {RESOLUTION} ({df.index.min():%Y-%m-%d} to {df.index.max():%Y-%m-%d}), "
                 f"{'linearly detrended, ' if DETREND else ''}{N_TREES} trees.\n\n")
         f.write("### Leave-one-year-out CV (out-of-fold predictions)\n")
@@ -167,6 +174,14 @@ def main():
         f.write(mean_abs_shap.to_frame("mean |SHAP|").to_markdown() + "\n\n")
         f.write("### RMSE by held-out year\n")
         f.write(by_year.round(4).to_markdown() + "\n\n")
+        f.writelines(f"![{name}_{fig}](FIGURE_URL/{name}_{fig}.png)\n" for fig in ("predictions", "beeswarm", "heatmap"))
+        f.write("\n")
+
+
+def main():
+    open("modelresults.md", "w").close()    # fresh results file; each run appends its section
+    for name, run in RUNS.items():
+        run_model(name, run["start"], run["end"], run["features"])
     print(open("modelresults.md").read())
 
 
