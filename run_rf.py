@@ -33,7 +33,7 @@ OUT_PREFIX = "s3://gaia/cjense/data/testmodel/rf"   # SHAP values + predictions 
 RESOLUTION = "MS"                                   # pandas frequency to average to, e.g. "6D", "MS"
 SEED       = 42
 
-TARGET = "Discharge (Gt/yr)"#"Near-Terminus Velocity (m/yr)"            # or "Discharge (Gt/yr)"
+TARGET = "Near-Terminus Velocity (m/yr)"#"Discharge (Gt/yr)"            # or "Discharge (Gt/yr)"
 BASE_FEATURES = [
     "Air Temperature (C)",
     "Ocean Thermal Forcing (C)",
