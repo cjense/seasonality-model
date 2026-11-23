@@ -13,7 +13,7 @@ BEESWARM_MAX_POINTS = 200_000         # subsample for the beeswarm plot (plottin
 SHAP_CHUNK_ROWS     = 1_000_000       # rows per GPU TreeSHAP call (large single calls overflow the CUDA launch config)
 GEOSHAP_MAX_ROWS    = 500_000        # GeoShapley row budget: whole timesteps (all pixels) are sampled up to this many rows
 SPECIAL_NAME  = "_2008_2025"             # include a special signifier to the end of filenames
-NOTES         = ("Run on ZI 2008-2025 using cross-validation and hyperpaarameter tuning. 6D resolution.")
+NOTES         = ("Run on ZI 2008-2025 using cross-validation and hyperpaarameter tuning. Velocity as target. 6D resolution.")
 
 FEATURE_COLS = [
     # Spatial vars
@@ -36,7 +36,7 @@ FEATURE_COLS = [
     # "x", "y",
 ]
 
-TARGET_COL = "Discharge (Gt/yr)"
+TARGET_COL = "Near-Terminus Velocity (m/yr)"#"Discharge (Gt/yr)"
 
 ########## Feature selection / hyperparameter tuning ##########
 # When True, the model uses the features and XGBoost hyperparameters chosen by select_features.py

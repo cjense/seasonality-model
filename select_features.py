@@ -41,9 +41,9 @@ BASE_VARS = [
     "Air Temperature (C)", "Mélange Area (km^2)",
     "Ocean Thermal Forcing (C)", "Terminus Area (km^2)",
     "Basin-Averaged Meltwater Runoff (mmWE/day)",
-    "Basin-Averaged Velocity (m/yr)",
+    # "Basin-Averaged Velocity (m/yr)",
     "Mélange Velocity (m/yr)",
-    "Near-Terminus Velocity (m/yr)",
+    # "Near-Terminus Velocity (m/yr)",
     "Near-Terminus Meltwater Runoff (mmWE/day)",
 ]
 TIME_VARS = []#["season_sin", "season_cos", "year_norm"]   # time_days is the same split points as year_norm for trees
