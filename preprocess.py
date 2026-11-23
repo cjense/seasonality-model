@@ -197,10 +197,9 @@ def detrend(df: pd.DataFrame, cols: list, fit_mask: np.ndarray, degree: int = DE
     """
     Remove a polynomial-in-time trend from each column in `cols`, in place.
 
-    The trend is fit by least squares on the rows where `fit_mask` is True (the training
-    period) and evaluated on every row, so the test period uses the trend extrapolated from
-    training. The fitted mean over the training rows is added back, so the result is
-    `value - trend(t) + train_mean`: same units and level as the raw data, without the trend.
+    The trend is fit by least squares on the rows where `fit_mask` is True (the pipeline uses
+    the whole period) and evaluated on every row. The mean over the fit rows is added back, so
+    the result is `value - trend(t) + mean`: same units and level as the raw data, without the trend.
 
     Columns that vary by pixel are fit separately per pixel (grouped by x, y when present);
     non-spatial columns have one value per timestep and get a single fit.
@@ -253,13 +252,12 @@ def plot_detrend(raw_ts: pd.DataFrame, detrended_ts: pd.DataFrame):
     for ax, col in zip(axes[:, 0], cols):
         ax.plot(raw_ts.index, raw_ts[col], color="gray", linewidth=1, label="raw")
         ax.plot(detrended_ts.index, detrended_ts[col], color="tab:blue", linewidth=1, label="detrended")
-        # Removed trend, shifted to the train mean so it overlays the raw series
-        ax.plot(raw_ts.index, raw_ts[col] - detrended_ts[col] + detrended_ts[col].loc[:TRAIN_CUTOFF].mean(),
+        # Removed trend, shifted to the mean so it overlays the raw series
+        ax.plot(raw_ts.index, raw_ts[col] - detrended_ts[col] + detrended_ts[col].mean(),
                 color="tab:red", linewidth=1, linestyle="--", label="trend")
-        ax.axvline(pd.Timestamp(TRAIN_CUTOFF), color="gray", linestyle=":", linewidth=1)
         ax.set_ylabel(textwrap.fill(col, 22), fontsize=8)
     axes[0, 0].legend(loc="upper left", fontsize=8)
-    axes[0, 0].set_title(f"Detrending (degree {DETREND_DEGREE} polynomial fit on {PERIOD_START} to {TRAIN_CUTOFF})")
+    axes[0, 0].set_title(f"Detrending (degree {DETREND_DEGREE} polynomial fit on {PERIOD_START} to {PERIOD_END})")
     plt.tight_layout()
 
     plt.savefig(f'./figures/detrend_{PERIOD}.png', dpi=300, bbox_inches='tight')
@@ -269,9 +267,12 @@ def plot_detrend(raw_ts: pd.DataFrame, detrended_ts: pd.DataFrame):
     plt.close(fig)
 
 def main():
+    # FEATURE_COLS comes from select_features.py when USE_FEATURE_SELECTION is on
+    require_selection()
+
     # First step of the pipeline: start a fresh results file for this period
     with open(RESULTS_PATH, "w") as outfile:
-        outfile.write(f"## Period: {PERIOD} (train {PERIOD_START} to {TRAIN_CUTOFF}, test {TEST_START} to {PERIOD_END})\n\n")
+        outfile.write(f"## Period: {PERIOD} ({PERIOD_START} to {PERIOD_END}, blocked CV in {CV_BLOCK_YEARS}-year chunks)\n\n")
 
     # Look for existing file of the correct resolution
     cache_path = f"{S3_BUCKET}/cjense/data/testmodel/flat_{RESOLUTION}{SPECIAL_NAME}.parquet"
@@ -306,38 +307,28 @@ def main():
 
     # Remove the long-term trend from the target and all physical input features.
     # Done before selecting columns so x/y are still available for per-pixel fits.
+    df = df[df["time"].between(PERIOD_START, PERIOD_END)].copy()
     if DETREND:
-        df = df[df["time"].between(PERIOD_START, PERIOD_END)].copy()
         detrend_cols = [c for c in [*FEATURE_COLS, TARGET_COL] if c not in DETREND_EXCLUDE]
-        fit_mask = (df["time"] < TRAIN_CUTOFF).to_numpy()
 
         raw_ts = df.groupby("time")[detrend_cols].mean()
-        df, slope_table = detrend(df, detrend_cols, fit_mask)
+        df, slope_table = detrend(df, detrend_cols, np.ones(len(df), dtype=bool))
         plot_detrend(raw_ts, df.groupby("time")[detrend_cols].mean())
         del raw_ts
 
         with open(RESULTS_PATH, 'a') as outfile:
             outfile.write("### Detrending\n")
-            outfile.write(f"Removed a degree-{DETREND_DEGREE} polynomial trend (fit on train period "
-                          f"{PERIOD_START} to {TRAIN_CUTOFF}, extrapolated over test) from the target and features; "
-                          f"train mean added back. Spatial columns fit per pixel (mean slope shown).\n\n")
+            outfile.write(f"Removed a degree-{DETREND_DEGREE} polynomial trend (fit on {PERIOD_START} to {PERIOD_END}) "
+                          f"from the target and features; mean added back. Spatial columns fit per pixel (mean slope shown).\n\n")
             outfile.write(slope_table.to_markdown() + "\n\n")
 
-    # Split data into train and test set by time, keeping time alongside the features and target
-    # so downstream scripts don't need to split it separately. A random split would leak: the
-    # target is the same for every pixel at a timestep, so test timesteps would also appear in train.
-    df = df[["time", *FEATURE_COLS, TARGET_COL]]
-    train = df[df["time"].between(PERIOD_START, TRAIN_CUTOFF, inclusive="left")]
-    test  = df[df["time"].between(TEST_START, PERIOD_END)]
-    del df
+    # Keep time alongside the features and target. There is no fixed train/test split:
+    # run_xgboost.py makes blocked CV folds from this (all pixels of a timestep stay in one fold).
+    df = df[["time", *FEATURE_COLS, TARGET_COL]].sort_values("time").reset_index(drop=True)
+    df.to_parquet(DATA_PATH, storage_options=storage_options, index=False)
+    print(f"Dataset saved to S3: {DATA_PATH}")
 
-    # Save train and test sets for run_xgboost.py and run_shap.py
-    train.to_parquet(TRAIN_PATH, storage_options=storage_options, index=False)
-    test.to_parquet(TEST_PATH, storage_options=storage_options, index=False)
-    print(f"Train set saved to S3: {TRAIN_PATH}")
-    print(f"Test set saved to S3: {TEST_PATH}")
-
-    return train, test
+    return df
 
 if __name__ == "__main__":
-    train, test = main()
+    df = main()

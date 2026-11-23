@@ -5,92 +5,130 @@ import matplotlib.pyplot as plt
 import skforecast.metrics as skmetrics
 
 from config import *
+from blocked_cv import blocked_splits, chunk_names
 
 
-def train_model(dtrain: xgb.QuantileDMatrix, dtest: xgb.QuantileDMatrix) -> xgb.Booster:
-    # TODO: Grid search for hyperparameters
+def booster_params(params: dict) -> tuple[dict, int]:
+    """
+    Convert MODEL_PARAMS (XGBRegressor names, from select_features.py or DEFAULT_PARAMS)
+    to xgb.train arguments. learning_rate, reg_lambda, gamma etc. are valid native aliases.
+    """
+    params = dict(params)
+    n_rounds = params.pop("n_estimators")
+    return {
+        "tree_method": "hist",
+        "device":      DEVICE,
+        "objective":   "reg:squarederror",
+        "eval_metric": ["rmse", "mae", "mape"],
+        "seed":        MODEL_SEED,
+        **params,
+    }, n_rounds
 
-    params = {
-        "tree_method":      "hist",
-        "device":           DEVICE,
-        "objective":        "reg:squarederror",
-        "eval_metric":      ["rmse", "mae", "mape"],
-        "max_depth":        5,
-        "eta":              0.05,
-        "subsample":        0.8,
-        "colsample_bytree": 0.8,
-        "min_child_weight": 10,
-        "seed":             MODEL_SEED,
-    }
+def train_model(df: pd.DataFrame, verbose: bool = False) -> xgb.Booster:
+    # Number of trees comes from tuning (blocked CV); no early stopping, which would need a validation set
+    params, n_rounds = booster_params(MODEL_PARAMS)
+    dtrain = xgb.QuantileDMatrix(df[FEATURE_COLS], label=df[TARGET_COL])
+    return xgb.train(params, dtrain, num_boost_round=n_rounds,
+                     evals=[(dtrain, "train")] if verbose else (), verbose_eval=25 if verbose else False)
 
-    model = xgb.train(
-        params,
-        dtrain,
-        num_boost_round=1000,
-        evals=[(dtrain, "train"), (dtest, "test")],
-        early_stopping_rounds=50,
-        verbose_eval=25,
-    )
+def cross_validate(data: pd.DataFrame) -> tuple[pd.Series, pd.DataFrame]:
+    """
+    Blocked CV over the whole period with the final features and params (folds from blocked_cv.py):
+    each chunk is predicted by a model trained on all other chunks, before and after it.
+    Returns the out-of-fold prediction for every row and a per-chunk error table.
+    """
+    oof = pd.Series(np.nan, index=data.index, name="pred")
+    rows = []
+    for name, (fit_pos, val_pos) in zip(chunk_names(data["time"]), blocked_splits(data["time"])):
+        fit, val = data.iloc[fit_pos], data.iloc[val_pos]
+        model = train_model(fit)
+        oof.iloc[val_pos] = model.predict(xgb.DMatrix(val[FEATURE_COLS]))
+        err = oof.iloc[val_pos].to_numpy() - val[TARGET_COL].to_numpy()
+        rows.append({
+            "held out": name,
+            "timesteps": val["time"].nunique(),
+            "RMSE":     float(np.sqrt(np.mean(err ** 2))),
+            "MAE":      float(np.mean(np.abs(err))),
+        })
+    per_chunk = pd.DataFrame(rows).set_index("held out")
+    print(per_chunk.round(4).to_string())
+    return oof, per_chunk
 
-    return model
-
-def evaluate(model: xgb.Booster, dtest: xgb.QuantileDMatrix, train: pd.DataFrame):
-    preds = model.predict(dtest)
-    truth = dtest.get_label()
-
-    # Mask NaN in truth only — can't compute metrics on unknown ground truth
-    valid = ~np.isnan(truth)
-    preds = preds[valid]
-    truth = truth[valid]
+def evaluate(oof: pd.Series, data: pd.DataFrame, per_chunk: pd.DataFrame, model: xgb.Booster):
+    """Metrics on the pooled out-of-fold predictions: every timestep predicted by a model that never saw its chunk."""
+    preds = oof.to_numpy()
+    truth = data[TARGET_COL].to_numpy()
 
     rmse = np.sqrt(np.mean((preds - truth) ** 2))
     mae  = np.mean(np.abs(preds - truth))
     truth_var = np.sum((truth - truth.mean()) ** 2)
     r2 = 1 - np.sum((truth - preds) ** 2) / truth_var if truth_var > 0 else float("nan")
-    
-    y_train = train[TARGET_COL].dropna().to_numpy()
-    rmsse = skmetrics.root_mean_squared_scaled_error(truth, preds, y_train)
-    mase = skmetrics.mean_absolute_scaled_error(truth, preds, y_train)
+
+    # Scaled errors: relative to a naive one-step forecast of the target series
+    y_scale = data.groupby("time")[TARGET_COL].mean().to_numpy()
+    rmsse = skmetrics.root_mean_squared_scaled_error(truth, preds, y_scale)
+    mase = skmetrics.mean_absolute_scaled_error(truth, preds, y_scale)
     smape = skmetrics.symmetric_mean_absolute_percentage_error(truth, preds)
-    
+
     # TODO: Calculate seasonal (phase, amplitude, etc.) errors
 
+    # Importance from the final model, trained on all chunks
     importance = model.get_score(importance_type="gain")
     importance = pd.Series(importance).sort_values(ascending=False)
-    
+
     # Write metrics to file for easy viewing
     with open(RESULTS_PATH, 'a') as outfile:
         outfile.write(NOTES + "\n\n")
-        outfile.write("### Model Metrics\n")
+        outfile.write(f"### Model Metrics (blocked CV, {len(per_chunk)} chunks of {CV_BLOCK_YEARS} yr, "
+                      f"{CV_GAP_MONTHS}-month gap; pooled out-of-fold predictions)\n")
         outfile.write(f"- RMSE   : {rmse:.4f} Gt/yr\n")
         outfile.write(f"- MAE    : {mae:.4f} Gt/yr\n")
         outfile.write(f"- R²     : {r2:.4f}\n")
         outfile.write(f"- RMSSE  : {rmsse:.4f}\n")
         outfile.write(f"- MASE   : {mase:.4f}\n")
         outfile.write(f"- SMAPE  : {smape:.4f}\n")
-        outfile.write(f"\n### Top 10 features by gain\n")
+        if USE_FEATURE_SELECTION:
+            outfile.write("\nFeatures and params were selected with the same chunks, so these are somewhat optimistic.\n")
+        outfile.write("\n### Error by held-out chunk\n")
+        outfile.write(per_chunk.round(4).to_markdown() + "\n\n")
+        outfile.write(f"Mean of per-chunk RMSE: {per_chunk['RMSE'].mean():.4f} Gt/yr "
+                      f"(range {per_chunk['RMSE'].min():.4f} to {per_chunk['RMSE'].max():.4f})\n\n")
+        outfile.write(f"### Top 10 features by gain (final model, all data)\n")
         outfile.write(importance.head(10).to_markdown() + "\n\n")
 
-    return {"rmse": rmse, "mae": mae, "r2": r2, "rmsse": rmsse, "mase": mase, "smape": smape, "feature_importance": importance}
+    return {"rmse": rmse, "mae": mae, "r2": r2, "rmsse": rmsse, "mase": mase, "smape": smape,
+            "per_chunk": per_chunk, "feature_importance": importance}
 
-def plot_predictions(model: xgb.Booster, train_df: pd.DataFrame, test_df: pd.DataFrame):
-    """Time series of truth vs. predictions over both the train and test periods."""
-    
+def write_model_setup():
+    """Record which features and hyperparameters were used, and where they came from."""
+    with open(RESULTS_PATH, 'a') as outfile:
+        outfile.write("### Features and hyperparameters\n")
+        if SELECTION is not None:
+            outfile.write(f"From select_features.py ({SELECTION['direction']} selection, {SELECTION['hyperopt_evals']} hyperopt "
+                          f"trials, {SELECTION.get('cv', 'CV')}, CV RMSE {SELECTION['cv_rmse']:.4f}): {SELECTION_PATH}\n\n")
+        else:
+            outfile.write("Hand-picked FEATURE_COLS and DEFAULT_PARAMS from config.py (USE_FEATURE_SELECTION is False).\n\n")
+        outfile.writelines(f"- {c}\n" for c in FEATURE_COLS)
+        outfile.write("\n")
+        outfile.writelines(f"- {k}: {v:.4g}\n" if isinstance(v, float) else f"- {k}: {v}\n" for k, v in MODEL_PARAMS.items())
+        outfile.write("\n")
+
+def plot_predictions(oof: pd.Series, data: pd.DataFrame):
+    """Truth vs. out-of-fold predictions; alternating shading marks the held-out chunks."""
+    # Many pixels per timestep in spatial runs, so average truth and predictions over space
+    ts = data[["time", TARGET_COL]].assign(pred=oof).groupby("time")[[TARGET_COL, "pred"]].mean()
+
     fig, ax = plt.subplots(figsize=(12, 4))
-    for df, label, color in [(train_df, "train", "tab:blue"), (test_df, "test", "tab:orange")]:
-        # Many pixels per timestep, so average truth and predictions over space
-        df = (df.assign(pred=model.predict(xgb.DMatrix(df[FEATURE_COLS])))
-                .groupby("time")[[TARGET_COL, "pred"]].mean())
-        ax.plot(df.index, df[TARGET_COL], color="black", linewidth=1,
-                label="truth" if label == "train" else None)
-        ax.plot(df.index, df["pred"], color=color, linewidth=1, linestyle="--",
-                label=f"prediction ({label})")
+    for i, (_, val_pos) in enumerate(blocked_splits(data["time"])):
+        if i % 2:
+            times = data["time"].iloc[val_pos]
+            ax.axvspan(times.min(), times.max() + pd.offsets.MonthEnd(0), color="gray", alpha=0.1, linewidth=0)
+    ax.plot(ts.index, ts[TARGET_COL], color="black", linewidth=1, label="truth")
+    ax.plot(ts.index, ts["pred"], color="tab:blue", linewidth=1, linestyle="--", label="prediction (held-out chunk)")
 
-    # mark where train data ends and test data begins
-    ax.axvline(pd.Timestamp(TRAIN_CUTOFF), color="gray", linestyle=":", linewidth=1)
     ax.set_xlabel("Time")
     ax.set_ylabel(f"Detrended {TARGET_COL}" if DETREND else TARGET_COL)
-    ax.set_title(f"Train {PERIOD_START} to {TRAIN_CUTOFF}, test {TEST_START} to {PERIOD_END}")
+    ax.set_title(f"Blocked CV {PERIOD_START} to {PERIOD_END}: each {CV_BLOCK_YEARS}-yr chunk predicted by a model trained on the others")
     ax.legend()
     xgboost_fig_path = f'{FIGURE_DIR}/{GLACIER_NAME}_xgbresult_{RESOLUTION}_seed{MODEL_SEED}{RUN_NAME}.png'
     # Save figure to .figures/ to upload to GitHub
@@ -101,20 +139,21 @@ def plot_predictions(model: xgb.Booster, train_df: pd.DataFrame, test_df: pd.Dat
     plt.close(fig)
 
 def main():
-    # Load train and test sets written by preprocess.py
-    train = pd.read_parquet(TRAIN_PATH, storage_options=storage_options)
-    test = pd.read_parquet(TEST_PATH, storage_options=storage_options)
+    require_selection()
 
-    # Construct QuantileDMatrices for training and testing (datetime excluded)
-    dtrain = xgb.QuantileDMatrix(train[FEATURE_COLS], label=train[TARGET_COL])
-    dtest = xgb.QuantileDMatrix(test[FEATURE_COLS], label=test[TARGET_COL], ref=dtrain)
+    # Load the dataset written by preprocess.py (whole period, sorted by time)
+    data = pd.read_parquet(DATA_PATH, storage_options=storage_options).dropna(subset=[TARGET_COL]).reset_index(drop=True)
 
-    print("Training new model...")
-    model = train_model(dtrain, dtest)
+    print("Cross-validating over held-out chunks...")
+    oof, per_chunk = cross_validate(data)
 
-    # Calculate model metrics
-    metrics = evaluate(model, dtest, train)
-    plot_predictions(model, train, test)
+    # Final model on all data: this is the one saved and explained by SHAP
+    print("Training final model on all data...")
+    model = train_model(data, verbose=True)
+
+    write_model_setup()
+    metrics = evaluate(oof, data, per_chunk, model)
+    plot_predictions(oof, data)
 
     # Save the model to disk
     model.save_model(LOCAL_MODEL_PATH)

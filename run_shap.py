@@ -9,15 +9,15 @@ from sklearn.model_selection import train_test_split
 
 from config import *
 
-def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, time_train: pd.Series, time_test: pd.Series, features: list):
+def shap_explainer(model: xgb.Booster, features_df: pd.DataFrame, times: pd.Series, features: list):
     '''
     Compute path-dependent TreeSHAP values on the GPU (XGBoost pred_contribs) to quantify input variable influence on output variables.
     Preserves datetime for heatmap plotting.
     '''
 
-    # Combine training and testing data (features only, datetime separate)
-    combined_features = pd.concat([train, test], ignore_index=True)
-    combined_time = pd.concat([time_train, time_test], ignore_index=True)
+    # Whole period (features only, datetime separate)
+    combined_features = features_df.reset_index(drop=True)
+    combined_time = times.reset_index(drop=True)
 
     # Sort by time and get the sort indices
     sort_idx = combined_time.argsort()
@@ -120,9 +120,8 @@ def shap_explainer(model: xgb.Booster, train: pd.DataFrame, test: pd.DataFrame, 
     return shap_vals_combined
 
 def main():
-    # Load train and test sets written by preprocess.py
-    train = pd.read_parquet(TRAIN_PATH, storage_options=storage_options)
-    test = pd.read_parquet(TEST_PATH, storage_options=storage_options)
+    # Load the dataset written by preprocess.py (whole period; the final model was trained on all of it)
+    data = pd.read_parquet(DATA_PATH, storage_options=storage_options)
 
     # Load the model written by run_xgboost.py
     model = xgb.Booster()
@@ -136,7 +135,7 @@ def main():
     model.load_model(LOCAL_MODEL_PATH)
 
     # Calculate SHAP values
-    shapvals = shap_explainer(model, train[FEATURE_COLS], test[FEATURE_COLS], train["time"], test["time"], FEATURE_COLS)
+    shapvals = shap_explainer(model, data[FEATURE_COLS], data["time"], FEATURE_COLS)
 
     return model, shapvals
 

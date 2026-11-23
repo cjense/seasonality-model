@@ -29,6 +29,22 @@ jobs:
           echo "Checking GPU availability..."
           nvidia-smi
 
+      - name: Select features and tune hyperparameters
+        # Writes the chosen features/params to S3; config.py loads them when USE_FEATURE_SELECTION is True.
+        # Skipped (config not used) when USE_FEATURE_SELECTION is False.
+        run: |
+          set -x
+          date
+          for PERIOD in $PERIODS; do
+            echo "=== Period: $PERIOD ==="
+            if PERIOD=$PERIOD pixi run -e seasonality-model python -c "import config, sys; sys.exit(0 if config.USE_FEATURE_SELECTION else 1)"; then
+              PERIOD=$PERIOD pixi run -e seasonality-model python -u select_features.py
+            else
+              echo "USE_FEATURE_SELECTION is False: skipping."
+            fi
+          done
+          date
+
       - name: Preprocess data
         run: |
           set -x
