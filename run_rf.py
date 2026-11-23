@@ -32,7 +32,7 @@ RESOLUTION = "6D"                                   # pandas frequency to averag
 START, END = "2008-07-17", "2025-12-31"             # air temperature starts 2008-07-17
 SEED       = 42
 
-TARGET = "Near-Terminus Velocity (m/yr)"            # or "Discharge (Gt/yr)"
+TARGET = "Discharge (Gt/yr)"#"Near-Terminus Velocity (m/yr)"            # or "Discharge (Gt/yr)"
 FEATURES = [
     "Air Temperature (C)",
     "Mélange Area (km^2)",
