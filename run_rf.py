@@ -48,7 +48,7 @@ RUNS = {
     "2015_2025_melange": {"start": "2015-01-01", "end": "2025-12-31", "features": BASE_FEATURES + ["Mélange Area (km^2)"]},
 }
 
-DETREND = True          # remove a linear trend from target and features (fit over the whole period)
+DETREND = False          # remove a linear trend from target and features (fit over the whole period)
 
 # Small grid: every combination is scored with leave-one-year-out CV
 PARAM_GRID = {
