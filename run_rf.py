@@ -45,10 +45,10 @@ BASE_FEATURES = [
 # mélange area only starts 2015-01-25, so it gets its own shorter run.
 RUNS = {
     "2008_2025":         {"start": "2008-07-17", "end": "2025-12-31", "features": BASE_FEATURES},
-    "2015_2025_melange": {"start": "2015-01-01", "end": "2025-12-31", "features": BASE_FEATURES}, #+ ["Mélange Area (km^2)"]},
+    "2015_2025_melange": {"start": "2015-01-01", "end": "2025-12-31", "features": BASE_FEATURES + ["Mélange Area (km^2)"]},
 }
 
-DETREND = False          # remove a linear trend from target and features (fit over the whole period)
+DETREND = True          # remove a linear trend from target and features (fit over the whole period)
 
 # Small grid: every combination is scored with leave-one-year-out CV
 PARAM_GRID = {
