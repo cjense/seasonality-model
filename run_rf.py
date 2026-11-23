@@ -29,7 +29,7 @@ from sklearn.model_selection import GridSearchCV, LeaveOneGroupOut, cross_val_pr
 ########## Settings ##########
 DATA_PATH  = "s3://gaia/cjense/data/testmodel/zach_non_spatial.parquet"
 OUT_PREFIX = "s3://gaia/cjense/data/testmodel/rf"   # SHAP values + predictions are written under this
-RESOLUTION = "6D"                                   # pandas frequency to average to, e.g. "6D", "MS"
+RESOLUTION = "MS"                                   # pandas frequency to average to, e.g. "6D", "MS"
 SEED       = 42
 
 TARGET = "Discharge (Gt/yr)"#"Near-Terminus Velocity (m/yr)"            # or "Discharge (Gt/yr)"
@@ -47,7 +47,7 @@ RUNS = {
     "2015_2025_melange": {"start": "2015-01-01", "end": "2025-12-31", "features": BASE_FEATURES + ["Mélange Area (km^2)"]},
 }
 
-DETREND = True          # remove a linear trend from target and features (fit over the whole period)
+DETREND = False          # remove a linear trend from target and features (fit over the whole period)
 
 # Small grid: every combination is scored with leave-one-year-out CV
 PARAM_GRID = {
