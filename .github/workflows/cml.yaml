@@ -1,4 +1,4 @@
-name: Model Training & SHAP Analysis
+name: Random Forest & SHAP
 
 on: [push, pull_request]
 
@@ -7,13 +7,8 @@ permissions:
   pull-requests: write  # PR comments
 
 jobs:
-
-  train-and-evaluate:
-    # TODO: maybe rename these things
+  random-forest:
     runs-on: [self-hosted, slurm, gpu, tillicum, cuda]
-
-    env:
-      PERIODS: "full" # "pre2015 post2015" # For training and testing pre- and post- Sentinel-1 launch
 
     steps:
       - name: Checkout repository
@@ -21,91 +16,22 @@ jobs:
 
       - name: Configure pixi environment location
         # Keep the env outside the checkout so `git clean` doesn't wipe it every run.
-        # Set here (not in the tracked .pixi/config.toml) so local machines aren't pointed at /gpfs.
         run: pixi config set --local detached-environments /gpfs/scrubbed/jensencc/pixi-envs
 
-      - name: Verify GPU access
-        run: |
-          echo "Checking GPU availability..."
-          nvidia-smi
-
-      - name: Select features and tune hyperparameters
-        # Writes the chosen features/params to S3; config.py loads them when USE_FEATURE_SELECTION is True.
-        # Skipped (config not used) when USE_FEATURE_SELECTION is False.
-        run: |
-          set -x
-          date
-          for PERIOD in $PERIODS; do
-            echo "=== Period: $PERIOD ==="
-            if PERIOD=$PERIOD pixi run -e seasonality-model python -c "import config, sys; sys.exit(0 if config.USE_FEATURE_SELECTION else 1)"; then
-              PERIOD=$PERIOD pixi run -e seasonality-model python -u select_features.py
-            else
-              echo "USE_FEATURE_SELECTION is False: skipping."
-            fi
-          done
-          date
-
-      - name: Preprocess data
-        run: |
-          set -x
-          date
-          for PERIOD in $PERIODS; do
-            echo "=== Period: $PERIOD ==="
-            PERIOD=$PERIOD pixi run -e seasonality-model python -u preprocess.py
-          done
-          date
-
-      - name: Train model
-        run: |
-          set -x
-          date
-          for PERIOD in $PERIODS; do
-            echo "=== Period: $PERIOD ==="
-            PERIOD=$PERIOD pixi run -e seasonality-model python -u run_xgboost.py
-          done
-          date
-
-      - name: Calculate SHAP values
-        run: |
-          set -x
-          date
-          for PERIOD in $PERIODS; do
-            echo "=== Period: $PERIOD ==="
-            PERIOD=$PERIOD pixi run -e seasonality-model python -u run_shap.py
-          done
-          date
-
-      - name: Calculate GeoShapley values
-        run: |
-          set -x
-          date
-          for PERIOD in $PERIODS; do
-            echo "=== Period: $PERIOD ==="
-            PERIOD=$PERIOD pixi run -e seasonality-model python -u run_geoshapley.py
-          done
-          date
+      - name: Train random forest and run SHAP
+        run: pixi run -e seasonality-model python -u run_rf.py
 
       - name: Upload figures to S3
         run: |
           pixi run -e seasonality-model python - <<'PY'
-          import os
-          from config import fs, S3_BUCKET
-          names = ["correlation.png", "scatter_matrix.png"]
-          for period in os.environ["PERIODS"].split():
-              names += [f"xgboost_result_{period}.png", f"beeswarm_{period}.png", f"heatmap_{period}.png"]
-          # Some figures are optional (e.g. no correlation/scatter plots when non_seasonal_vars is empty)
-          uploaded = []
-          for name in names:
-              if not os.path.exists(f"figures/{name}"):
-                  print(f"Skipping missing figure: {name}")
-                  continue
-              fs.put(f"figures/{name}",
-                     f"{S3_BUCKET}/cjense/ci-figures/{os.environ['GITHUB_RUN_ID']}/{name}",
+          import os, s3fs
+          fs = s3fs.S3FileSystem(key=os.environ["AWS_ACCESS_KEY_ID"], secret=os.environ["AWS_SECRET_ACCESS_KEY"],
+                                 client_kwargs={"endpoint_url": os.environ["S3_ENDPOINT_URL"]},
+                                 config_kwargs={"request_checksum_calculation": "when_required",
+                                                "response_checksum_validation": "when_required"})
+          for name in ["predictions.png", "beeswarm.png", "heatmap.png"]:
+              fs.put(f"figures/{name}", f"gaia/cjense/ci-figures/{os.environ['GITHUB_RUN_ID']}/{name}",
                      ACL="public-read", ContentType="image/png")
-              uploaded.append(name)
-          # List of uploaded figures for the report step
-          with open("uploaded_figures.txt", "w") as f:
-              f.write("\n".join(uploaded) + "\n")
           PY
 
       - name: Report results
@@ -113,38 +39,17 @@ jobs:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FIG_URL="${S3_ENDPOINT_URL}/gaia/cjense/ci-figures/${GITHUB_RUN_ID}"
-          : > modelresults.md
-
-          # Figures shared by all periods (correlation, scatter matrix), if they were made
-          { grep -vE "_($(echo $PERIODS | tr ' ' '|'))\.png$" uploaded_figures.txt || true; } | while read -r name; do
-            [ -n "$name" ] && echo "![${name}](${FIG_URL}/${name})" >> modelresults.md
-          done
-          echo "" >> modelresults.md
-
-          # Per period: the results file (config NOTES, data, metrics, feature importance), then its figures
-          for PERIOD in $PERIODS; do
-            if [ -f "modelresults_${PERIOD}.md" ]; then
-              cat "modelresults_${PERIOD}.md" >> modelresults.md
-            else
-              echo "## Period: ${PERIOD} (no results file found)" >> modelresults.md
-            fi
-            echo "" >> modelresults.md
-            { grep -E "_${PERIOD}\.png$" uploaded_figures.txt || true; } | while read -r name; do
-              echo "![${name}](${FIG_URL}/${name})" >> modelresults.md
-            done
-            echo "" >> modelresults.md
+          for name in predictions beeswarm heatmap; do
+            echo "![${name}](${FIG_URL}/${name}.png)" >> modelresults.md
           done
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            curl -s -X POST \
-              -H "Authorization: token ${REPO_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
-              -d "{\"body\": $(cat modelresults.md | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}"
+            URL="https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments"
           else
-            curl -s -X POST \
-              -H "Authorization: token ${REPO_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${{ github.repository }}/commits/${GITHUB_SHA}/comments" \
-              -d "{\"body\": $(cat modelresults.md | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}"
+            URL="https://api.github.com/repos/${{ github.repository }}/commits/${GITHUB_SHA}/comments"
           fi
+          curl -s -X POST \
+            -H "Authorization: token ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "$URL" \
+            -d "{\"body\": $(python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' < modelresults.md)}"
