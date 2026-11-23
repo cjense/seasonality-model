@@ -29,8 +29,9 @@ jobs:
                                  client_kwargs={"endpoint_url": os.environ["S3_ENDPOINT_URL"]},
                                  config_kwargs={"request_checksum_calculation": "when_required",
                                                 "response_checksum_validation": "when_required"})
-          for name in ["predictions.png", "beeswarm.png", "heatmap.png"]:
-              fs.put(f"figures/{name}", f"gaia/cjense/ci-figures/{os.environ['GITHUB_RUN_ID']}/{name}",
+          import glob
+          for path in glob.glob("figures/*.png"):
+              fs.put(path, f"gaia/cjense/ci-figures/{os.environ['GITHUB_RUN_ID']}/{os.path.basename(path)}",
                      ACL="public-read", ContentType="image/png")
           PY
 
@@ -38,10 +39,9 @@ jobs:
         env:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # run_rf.py writes image links as FIGURE_URL/<name>.png under each run's section
           FIG_URL="${S3_ENDPOINT_URL}/gaia/cjense/ci-figures/${GITHUB_RUN_ID}"
-          for name in predictions beeswarm heatmap; do
-            echo "![${name}](${FIG_URL}/${name}.png)" >> modelresults.md
-          done
+          sed -i "s|FIGURE_URL|${FIG_URL}|g" modelresults.md
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             URL="https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments"
