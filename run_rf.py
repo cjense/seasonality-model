@@ -27,8 +27,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import GridSearchCV, LeaveOneGroupOut, cross_val_predict
 
 ########## Settings ##########
-# DATA_PATH  = "s3://gaia/cjense/data/testmodel/zach_non_spatial.parquet"
-DATA_PATH  = "s3://gaia/cjense/data/testmodel/79N_non_spatial.parquet"
+DATA_PATH  = "s3://gaia/cjense/data/testmodel/zach_non_spatial.parquet"
+# DATA_PATH  = "s3://gaia/cjense/data/testmodel/79N_non_spatial.parquet"
 OUT_PREFIX = "s3://gaia/cjense/data/testmodel/rf"   # SHAP values + predictions are written under this
 RESOLUTION = "MS"                                   # pandas frequency to average to, e.g. "6D", "MS"
 SEED       = 42
@@ -37,7 +37,7 @@ TARGET = "Near-Terminus Velocity (m/yr)"#"Discharge (Gt/yr)"            # or "Di
 BASE_FEATURES = [
     "Air Temperature (C)",
     "Ocean Thermal Forcing (C)",
-    # "Terminus Area (km^2)",
+    "Terminus Area (km^2)",
     "Basin-Averaged Meltwater Runoff (mmWE/day)",
 ]
 
