@@ -98,6 +98,42 @@ def save_fig(name: str):
     plt.close("all")
 
 
+def plot_shap_heatmap(sv: shap.Explanation, index: pd.DatetimeIndex, start: str, end: str, title: str):
+    """
+    shap.plots.heatmap with one column per RESOLUTION timestep from start to end. Timesteps with no
+    SHAP value (no sample there) are NaN and show as blank columns; nothing is filled in.
+    """
+    grid = pd.date_range(pd.Timestamp(start).to_period("M").to_timestamp() if RESOLUTION == "MS" else start,
+                         end, freq=RESOLUTION)
+    has_value = grid.isin(index)
+    pos = pd.Series(np.arange(len(index)), index=index).reindex(grid[has_value]).to_numpy()
+
+    values = np.full((len(grid), sv.values.shape[1]), np.nan)
+    data = np.full_like(values, np.nan)
+    values[has_value] = sv.values[pos]
+    data[has_value] = sv.data[pos]
+    padded = shap.Explanation(values=values, base_values=np.full(len(grid), np.mean(sv.base_values)),
+                              data=data, feature_names=sv.feature_names)
+
+    # shap ignores NaN in the cells but not in the feature ranking or f(x) line, so pass the ranking
+    # in and redraw f(x) with gaps (shap scales it by abs(f(x)).max(), which is NaN here)
+    importance = np.nanmean(np.abs(values), axis=0)
+    ax = shap.plots.heatmap(padded, instance_order=np.arange(len(grid)), feature_values=importance,
+                            feature_order=np.argsort(-importance), max_display=values.shape[1], show=False)
+    ax.lines[-1].remove()
+    fx = values.sum(axis=1)                                   # NaN where there is no sample
+    ax.plot(-fx / np.nanmax(np.abs(fx)) - 1.5, color="black", linewidth=1)
+
+    ax.set_aspect("auto")
+    ax.figure.set_size_inches(15, 5)
+    # Tick at the first timestep of each new year (skips the partial first year so labels don't overlap)
+    first_of_year = np.flatnonzero(pd.Series(grid.year).diff().fillna(0).ne(0))
+    ax.set_xticks(first_of_year)
+    ax.set_xticklabels(grid.year[first_of_year], rotation=0)
+    ax.set_xlabel("Year")
+    ax.set_title(title)
+
+
 def run_model(name: str, start: str, end: str, features: list):
     print(f"\n===== Run {name}: {start} to {end}, {len(features)} features =====")
     raw = load_data(start, end, features)
@@ -143,14 +179,7 @@ def run_model(name: str, start: str, end: str, features: list):
     plt.title(f"SHAP values ({name}): {label}")
     save_fig(f"{name}_beeswarm")
 
-    ax = shap.plots.heatmap(sv, instance_order=np.arange(len(X)), max_display=len(features), show=False)
-    ax.set_aspect("auto")
-    ax.figure.set_size_inches(15, 5)
-    first_of_year = np.flatnonzero(pd.Series(years).ne(pd.Series(years).shift()))
-    ax.set_xticks(first_of_year)
-    ax.set_xticklabels(years[first_of_year], rotation=0)
-    ax.set_xlabel("Year")
-    ax.set_title(f"SHAP values over time ({name}): {label}")
+    plot_shap_heatmap(sv, df.index, start, end, f"SHAP values over time ({name}): {label}")
     save_fig(f"{name}_heatmap")
 
     ##### Save values to S3 #####
