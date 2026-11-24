@@ -39,6 +39,7 @@ BASE_FEATURES = [
     "Ocean Thermal Forcing (C)",
     "Terminus Area (km^2)",
     "Basin-Averaged Meltwater Runoff (mmWE/day)",
+    "Terminus Area Change (km^2)",
 ]
 
 # Each run is tuned, cross-validated and explained separately. Air temperature starts 2008-07-17;
