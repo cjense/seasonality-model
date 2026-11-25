@@ -33,7 +33,7 @@ OUT_PREFIX = "s3://gaia/cjense/data/testmodel/rf"   # SHAP values + predictions 
 RESOLUTION = "MS"                                   # pandas frequency to average to, e.g. "6D", "MS"
 SEED       = 42
 
-TARGET = "Near-Terminus Velocity (m/yr)"#"Discharge (Gt/yr)"            # or "Discharge (Gt/yr)"
+TARGET = "Discharge (Gt/yr)" #"Near-Terminus Velocity (m/yr)"
 BASE_FEATURES = [
     "Air Temperature (C)",
     "Ocean Thermal Forcing (C)",
@@ -46,7 +46,7 @@ BASE_FEATURES = [
 # mélange area only starts 2015-01-25, so it gets its own shorter run.
 RUNS = {
     "2008_2025":         {"start": "2008-07-17", "end": "2025-12-31", "features": BASE_FEATURES},
-    "2015_2025_melange": {"start": "2015-01-01", "end": "2025-12-31", "features": BASE_FEATURES + ["Mélange Area (km^2)"]},
+    "2015_2025_melange": {"start": "2015-01-01", "end": "2025-12-31", "features": BASE_FEATURES + ["Mélange Area (km^2)", "Mélange Velocity (m/yr)"]},
 }
 
 DETREND = False          # remove a linear trend from target and features (fit over the whole period)
